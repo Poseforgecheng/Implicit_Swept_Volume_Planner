@@ -1,0 +1,22 @@
+map: ditu
+map_yaml: ../maps/ditu/map.yaml
+robot_shape: long_rectangle
+robot_yaml: ../config/robot_shapes/long_rectangle.yaml
+
+generation:
+  type: hand_authored_key_tasks
+  scenario: imported_large_building_map
+  coordinate_units: metres
+  angle_units: radians
+  endpoint_validation_step_m: 0.01
+
+tasks:
+  - id: task_001
+    description: west_open_area_to_east_building_interior
+    start: [-8.0, -2.0, 0.0]
+    goal: [2.0, -9.0, 0.0]
+
+  - id: task_002
+    description: lower_building_to_upper_building_crossing
+    start: [-8.0, -17.0, 0.0]
+    goal: [0.0, -1.0, 0.0]

@@ -1,9 +1,18 @@
 <launch>
   <arg name="strict_rebuild_case" default="" />
   <arg name="use_start_goal_params" default="true" />
+  <arg name="enable_three_level_planner" default="true" />
+  <arg name="planner_config" default="$(find isweep_planner)/config/planner.yaml" />
+  <arg name="run_local_planner" default="false" />
+  <arg name="planner_method" default="current_full" />
   <node name="isweep_planner" pkg="isweep_planner" type="isweep_planner_node" output="screen">
-    <rosparam file="$(find isweep_planner)/config/planner.yaml" command="load" />
+    <rosparam file="$(arg planner_config)" command="load" />
+    <rosparam if="$(arg enable_three_level_planner)"
+              file="$(find isweep_planner)/config/planner_v3_ackermann.yaml"
+              command="load" />
     <param name="strict_rebuild_case" value="$(arg strict_rebuild_case)" />
     <param name="use_start_goal_params" value="$(arg use_start_goal_params)" />
+    <param name="planner_method" value="$(arg planner_method)" />
+    <param name="run_local_planner" value="$(arg run_local_planner)" />
   </node>
 </launch>

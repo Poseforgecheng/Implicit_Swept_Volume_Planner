@@ -1,0 +1,22 @@
+map: bench_l_corner_180
+map_yaml: ../maps/bench_l_corner_180/map.yaml
+robot_shape: long_rectangle
+robot_yaml: ../config/robot_shapes/long_rectangle.yaml
+
+generation:
+  type: hand_authored_key_tasks
+  scenario: l_corner_90_degree_turn
+  coordinate_units: metres
+  angle_units: radians
+  endpoint_validation_step_m: 0.01
+
+tasks:
+  - id: task_001
+    description: horizontal_entry_to_vertical_exit
+    start: [1.0, 2.65, 0.0]
+    goal: [6.65, 7.0, 1.5707963267948966]
+
+  - id: task_002
+    description: vertical_entry_to_horizontal_exit
+    start: [6.65, 7.0, -1.5707963267948966]
+    goal: [1.0, 2.65, 3.141592653589793]

@@ -1,0 +1,6 @@
+std_msgs/Header header
+isweep_planner/GlobalReferencePoint[] points
+float64 total_length
+uint32 num_segments
+uint32 num_medium_risk_segments
+uint32 num_high_risk_segments

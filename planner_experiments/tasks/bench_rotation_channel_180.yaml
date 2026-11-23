@@ -1,0 +1,22 @@
+map: bench_rotation_channel_180
+map_yaml: ../maps/bench_rotation_channel_180/map.yaml
+robot_shape: long_rectangle
+robot_yaml: ../config/robot_shapes/long_rectangle.yaml
+
+generation:
+  type: hand_authored_key_tasks
+  scenario: continuous_rotation_channel
+  coordinate_units: metres
+  angle_units: radians
+  endpoint_validation_step_m: 0.01
+
+tasks:
+  - id: task_001
+    description: left_to_right_along_channel_tangent
+    start: [0.8, 4.915506, 0.924008]
+    goal: [9.2, 3.084494, 0.924008]
+
+  - id: task_002
+    description: right_to_left_along_channel_tangent
+    start: [9.2, 3.084494, -2.217585]
+    goal: [0.8, 4.915506, -2.217585]

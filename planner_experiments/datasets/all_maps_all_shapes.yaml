@@ -1,0 +1,84 @@
+schema_version: 1
+
+# Versioned Cartesian-product definition used by run_batch.py.  The six
+# generated scenarios, ditu, and three additional maps shipped by
+# isweep_planner are crossed with all four experiment footprints.  The
+# isweep_planner map.yaml is intentionally omitted because it is byte-for-byte
+# identical to planner_experiments/maps/ditu/map.yaml.  Methods and planning
+# seeds come from the experiment config or CLI.
+matrix:
+  maps:
+    - name: narrow_door_180
+      yaml: package://planner_experiments/maps/bench_narrow_door_180/map.yaml
+      metadata:
+        benchmark_group: parametric
+        scene_family: narrow_door
+        passage_width_m: 1.8
+    - name: l_corner_180
+      yaml: package://planner_experiments/maps/bench_l_corner_180/map.yaml
+      metadata:
+        benchmark_group: parametric
+        scene_family: l_corner
+        passage_width_m: 1.8
+    - name: s_channel_180
+      yaml: package://planner_experiments/maps/bench_s_channel_180/map.yaml
+      metadata:
+        benchmark_group: parametric
+        scene_family: s_channel
+        passage_width_m: 1.8
+    - name: rotation_channel_180
+      yaml: package://planner_experiments/maps/bench_rotation_channel_180/map.yaml
+      metadata:
+        benchmark_group: parametric
+        scene_family: rotation_channel
+        passage_width_m: 1.8
+    - name: dual_route
+      yaml: package://planner_experiments/maps/bench_dual_route/map.yaml
+      metadata:
+        benchmark_group: parametric
+        scene_family: dual_route
+    - name: random_obstacles_seed1
+      yaml: package://planner_experiments/maps/bench_random_obstacles_seed1/map.yaml
+      metadata:
+        benchmark_group: parametric
+        scene_family: random_obstacles
+    - name: ditu
+      yaml: package://planner_experiments/maps/ditu/map.yaml
+      metadata:
+        benchmark_group: repository_map
+        scene_family: ditu
+    - name: isweep_map_clean_nav
+      yaml: package://isweep_planner/maps/map_clean_nav.yaml
+      metadata:
+        benchmark_group: repository_map
+        scene_family: isweep_map_clean_nav
+    - name: isweep_maze
+      yaml: package://isweep_planner/maps/maze.yaml
+      metadata:
+        benchmark_group: repository_map
+        scene_family: maze
+    - name: isweep_office
+      yaml: package://isweep_planner/maps/office.yaml
+      metadata:
+        benchmark_group: repository_map
+        scene_family: office
+
+  robots:
+    - name: circle
+      yaml: package://planner_experiments/config/robot_shapes/circle.yaml
+    - name: long_rectangle
+      yaml: package://planner_experiments/config/robot_shapes/long_rectangle.yaml
+    - name: t_shape
+      yaml: package://planner_experiments/config/robot_shapes/t_shape.yaml
+    - name: l_shape
+      yaml: package://planner_experiments/config/robot_shapes/l_shape.yaml
+
+  task_generation:
+    num_tasks: 10
+    seed: 2
+    min_distance: 2.0
+    yaw_mode: random
+    different_topology_direction: false
+
+  metadata:
+    dataset_role: all_maps_all_shapes

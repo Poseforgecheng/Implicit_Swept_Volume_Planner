@@ -20,16 +20,29 @@ namespace isweep_planner {
 
 class Se2SvsdfSolver {
  public:
+  struct SolveDiagnostics {
+    bool strict_called = false;
+    bool midend_success = false;
+    bool full_svsdf_used = false;
+    bool full_svsdf_success = false;
+    bool preserve_shape_bypass = false;
+    int obstacle_point_count = 0;
+    double full_svsdf_elapsed_ms = 0.0;
+  };
+
   Se2SvsdfSolver();
 
   void Initialize(ros::NodeHandle& nh, ros::NodeHandle& pnh,
                   const FootprintModel& footprint);
   bool UpdateMap(const nav_msgs::OccupancyGrid& map);
   bool Solve(const std::vector<SE2State>& segment, Trajectory* trajectory,
-             bool preserve_shape = false);
+             bool preserve_shape = false, bool force_full_svsdf = false);
   void setGridMapForMidend(const GridMap* map);
 
   bool ready() const { return ready_; }
+  const SolveDiagnostics& lastSolveDiagnostics() const {
+    return last_solve_diagnostics_;
+  }
 
  private:
   Config BuildDefaultConfig() const;
@@ -53,6 +66,8 @@ class Se2SvsdfSolver {
 
   bool initialized_ = false;
   bool ready_ = false;
+  double footprint_query_radius_ = 0.0;
+  SolveDiagnostics last_solve_diagnostics_;
 };
 
 }  // namespace isweep_planner

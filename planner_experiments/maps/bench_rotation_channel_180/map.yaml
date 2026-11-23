@@ -1,0 +1,19 @@
+image: map.pgm
+resolution: 0.05
+origin:
+- 0.0
+- 0.0
+- 0.0
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196
+generator_type: rotation_channel
+generator_version: 1.0.0
+width: 200
+height: 160
+all_geometry_parameters:
+  door_width: 0.9
+  channel_width: 1.8
+  obstacle_count: 20
+random_seed: 1
+map_hash: e911d42f34ab4cd07435be032f214c23f33d389955235b63f8198252699b5c8b

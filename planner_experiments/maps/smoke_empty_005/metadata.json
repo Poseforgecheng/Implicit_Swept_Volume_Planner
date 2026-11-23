@@ -1,0 +1,14 @@
+{
+  "all_geometry_parameters": {
+    "channel_width": 1.2,
+    "door_width": 0.9,
+    "obstacle_count": 0
+  },
+  "generator_type": "random_obstacles",
+  "generator_version": "1.0.0",
+  "height": 120,
+  "map_hash": "8993b36467a9d9bf08965b4d5b424cdead7bb33ee6a055be370ea5aaf4c39ca0",
+  "random_seed": 2,
+  "resolution": 0.05,
+  "width": 160
+}

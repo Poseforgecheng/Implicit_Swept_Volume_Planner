@@ -21,6 +21,20 @@ struct OptimizerParams {
   double max_yaw_rate = 1.5;
   double safety_margin = 0.1;
   double step_size = 0.01;
+  // Preserve enough optimized support states when fitting the final quintic
+  // pieces. Long chords through a rounded state chain recreate a cusp.
+  double fit_max_piece_length_r2 = 1.0;
+  double fit_max_piece_length_se2 = 1.5;
+  double fit_max_heading_change = 4.0;
+  // Fraction of the adjacent chord speed used at a solver-level boundary.
+  // A nonzero shared velocity prevents a zero-speed C2 join from hiding a
+  // geometric cusp while keeping the transition local and conservative.
+  double stitch_tangent_speed_scale = 0.35;
+  double stitch_max_tangent_speed_ratio = 0.60;
+  int stitch_guard_pieces = 0;
+  int post_stitch_smoothing_iterations = 0;
+  double post_stitch_smoothing_alpha = 0.40;
+  double post_stitch_sample_spacing = 0.12;
 };
 
 class TrajectoryOptimizer {
@@ -47,6 +61,7 @@ class TrajectoryOptimizer {
                      std::vector<YawPolyPiece>& pieces);
   std::vector<double> allocateTime(const std::vector<SE2State>& waypoints,
                                    double total_time);
+  Trajectory smoothStitchedTrajectory(const Trajectory& trajectory);
 
   const GridMap* map_ = nullptr;
   const SvsdfEvaluator* svsdf_ = nullptr;

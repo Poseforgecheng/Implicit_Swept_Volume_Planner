@@ -1,0 +1,22 @@
+map: smoke_empty_005
+map_yaml: ../maps/smoke_empty_005/map.yaml
+robot_shape: long_rectangle
+robot_yaml: ../config/robot_shapes/long_rectangle.yaml
+
+generation:
+  type: hand_authored_key_tasks
+  scenario: empty_map_resolution_005
+  coordinate_units: metres
+  angle_units: radians
+  endpoint_validation_step_m: 0.01
+
+tasks:
+  - id: task_001
+    description: straight_lower_crossing
+    start: [1.0, 1.5, 0.0]
+    goal: [7.0, 1.5, 0.0]
+
+  - id: task_002
+    description: upper_crossing_with_goal_yaw_change
+    start: [1.0, 4.5, 0.0]
+    goal: [7.0, 4.5, 0.5]

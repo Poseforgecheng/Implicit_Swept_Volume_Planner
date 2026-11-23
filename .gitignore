@@ -3,6 +3,20 @@ build/
 devel/
 logs/
 install/
+results/
+experiment_data/
+.catkin_tools/
+catkin_generated/
+CMakeCache.txt
+CMakeFiles/
+Testing/
+*.bag
+*.bag.active
+.venv/
+venv/
+.pytest_cache/
+.mplconfig/
+*.log
 
 # IDE
 .vscode/
@@ -18,3 +32,11 @@ Thumbs.db
 # ROS
 *.pyc
 __pycache__/
+
+# Local credentials and editor/agent state
+.env
+.env.*
+!.env.example
+.claude/
+.codex/
+.worktrees/

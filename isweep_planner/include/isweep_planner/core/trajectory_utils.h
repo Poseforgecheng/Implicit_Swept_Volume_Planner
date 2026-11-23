@@ -40,6 +40,11 @@ void AppendTrajectoryPieces(const Trajectory& source, Trajectory* target);
 
 double ApproximateTrajectoryLength(const Trajectory& traj);
 
+// Fraction of the original trajectory left untouched by a local replacement.
+// Invalid or zero-length baselines return NaN rather than a fabricated value.
+double LocalTrajectoryReuseRatio(double original_length,
+                                 double replanned_length);
+
 double TrajectorySmoothnessCost(const Trajectory& traj);
 
 int CountHighRiskSegments(const std::vector<MotionSegment>& segments, size_t end_index);

@@ -1,0 +1,7 @@
+<launch>
+  <arg name="config" default="$(find planner_experiments)/config/experiment_default.yaml"/>
+  <arg name="tasks"/>
+  <arg name="output"/>
+  <node pkg="planner_experiments" type="run_batch.py" name="planner_experiments_batch"
+        output="screen" args="--config $(arg config) --tasks $(arg tasks) --output $(arg output)"/>
+</launch>

@@ -1,0 +1,10 @@
+name: long_rectangle
+footprint:
+  - [-0.60, -0.25]
+  - [ 0.60, -0.25]
+  - [ 0.60,  0.25]
+  - [-0.60,  0.25]
+mesh_path: package://planner_experiments/meshes/long_rectangle.obj
+inscribed_radius: 0.25
+circumscribed_radius: 0.65
+safety_margin: 0.0

@@ -1,0 +1,63 @@
+experiment:
+  output_root: results
+  total_time_budget_sec: 20.0
+  continue_on_error: true
+  save_trajectory_samples: true
+  save_state_metrics: true
+  save_segment_metrics: true
+  publish_rviz_markers: false
+  methods: [current_full, current_no_local_recovery, current_no_recovery, full_r2, full_strict, hybrid_astar]
+
+paths:
+  planner_config: package://isweep_planner/config/planner_benchmark.yaml
+  methods_config: package://planner_experiments/config/methods.yaml
+  maps_root: package://planner_experiments/maps
+  robot_shapes_dir: package://planner_experiments/config/robot_shapes
+
+reproducibility:
+  random_seed: 1
+  fixed_cpu_threads: 1
+  record_git_commit: true
+  record_git_dirty: true
+  record_build_type: true
+  record_host_information: true
+
+validation:
+  time_step_sec: 0.01
+  max_translation_step_m: 0.01
+  max_yaw_step_rad: 0.01
+  footprint_boundary_step_m: 0.01
+  footprint_interior_step_m: 0.02
+  collision_clearance_m: 0.0
+  require_dynamics: true
+  require_boundary_continuity: true
+  require_endpoint_match: true
+  max_endpoint_position_error_m: 0.001
+  max_endpoint_yaw_error_rad: 0.01
+
+limits:
+  # Null fields are replaced by the actual planner configuration and logged.
+  max_linear_velocity:
+  max_linear_acceleration:
+  max_angular_velocity:
+  max_angular_acceleration:
+
+geometry_check:
+  enabled: true
+  max_centroid_error_m: 0.01
+  max_hausdorff_distance_m: 0.02
+  outline_sample_step_m: 0.005
+  max_relative_area_error: 0.05
+  fail_experiment_on_mismatch: true
+
+risk_ground_truth:
+  enabled: false
+  run_low_solver_for_all_segments: true
+  run_medium_solver_for_all_segments: true
+  run_strict_solver_for_all_segments: true
+
+precision_sweep:
+  yaw_bins: [18, 36, 72]
+  map_resolution: [0.02, 0.05, 0.10]
+  footprint_sampling_step_m: [0.01, 0.025, 0.05]
+  validation_time_step_sec: [0.005, 0.01, 0.02]

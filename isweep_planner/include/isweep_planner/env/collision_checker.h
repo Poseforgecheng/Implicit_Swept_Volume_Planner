@@ -3,6 +3,7 @@
 #include <isweep_planner/core/common.h>
 #include <isweep_planner/env/grid_map.h>
 #include <isweep_planner/env/footprint_model.h>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -45,6 +46,7 @@ private:
 
   // Cache: grid linear index -> safe yaw bin indices
   mutable std::unordered_map<int, std::vector<int>> safe_yaw_cache_;
+  mutable std::mutex safe_yaw_cache_mutex_;
 };
 
 }  // namespace isweep_planner

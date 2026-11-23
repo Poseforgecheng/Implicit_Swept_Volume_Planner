@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "isweep_planner/env/collision_checker.h"
@@ -26,6 +27,7 @@ struct HybridAStarParams {
   int max_expansions = 50000;
   int fast_pass_max_expansions = 8000;
   int fast_pass_steer_samples = 3;
+  double heuristic_weight = 1.0;
 
   double pose_recovery_max_radius = 0.6;
   double pose_recovery_radial_step = 0.05;
@@ -39,7 +41,10 @@ class HybridAStarPlanner {
   void init(const GridMap& map, const CollisionChecker& checker,
             const HybridAStarParams& params);
 
-  bool plan(const SE2State& start, const SE2State& goal, std::vector<SE2State>& path);
+  bool plan(const SE2State& start, const SE2State& goal,
+            std::vector<SE2State>& path,
+            double time_budget_sec = std::numeric_limits<double>::infinity(),
+            std::vector<SE2State>* diagnostic_partial = nullptr);
 
  private:
   bool inBoundsAndFree(const SE2State& state) const;

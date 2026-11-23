@@ -91,35 +91,34 @@ nav_msgs::Path RosVisualizer::MakeTrajectoryPath(const Trajectory& traj) {
 }
 
 visualization_msgs::MarkerArray RosVisualizer::MakeFootprintMarkers(
-    const Trajectory& traj, 
-    const FootprintModel& footprint, 
+    const Trajectory& traj,
+    const FootprintModel& footprint,
     const std::string& frame_id,
     double dt) {
-    
   visualization_msgs::MarkerArray msg;
-  
+
   visualization_msgs::Marker delete_marker;
   delete_marker.action = visualization_msgs::Marker::DELETEALL;
   msg.markers.push_back(delete_marker);
-  
+
   if (traj.empty()) {
     return msg;
   }
 
   const double total = traj.totalDuration();
   int marker_id = 0;
-  
+
   for (double t = 0.0; t <= total + 1e-9; t += dt) {
     const SE2State state = traj.sample(std::min(t, total));
-    
+
     visualization_msgs::Marker marker;
     marker.header.frame_id = frame_id;
     marker.header.stamp = ros::Time::now();
     marker.ns = "footprint";
     marker.id = marker_id++;
     marker.type = visualization_msgs::Marker::LINE_STRIP;
-    marker.scale.x = 0.02; 
-    marker.color.a = 0.6;  
+    marker.scale.x = 0.02;
+    marker.color.a = 0.6;
     marker.color.r = 0.0;
     marker.color.g = 1.0;
     marker.color.b = 0.0;
@@ -146,9 +145,142 @@ visualization_msgs::MarkerArray RosVisualizer::MakeFootprintMarkers(
     }
 
     msg.markers.push_back(marker);
-    }
+  }
 
+  return msg;
+}
+
+visualization_msgs::MarkerArray RosVisualizer::MakeRiskAwareReferenceMarkers(
+    const RiskAwareGlobalReferenceData& reference, const std::string& frame_id) {
+  visualization_msgs::MarkerArray msg;
+
+  visualization_msgs::Marker delete_marker;
+  delete_marker.action = visualization_msgs::Marker::DELETEALL;
+  msg.markers.push_back(delete_marker);
+
+  if (reference.points.empty()) {
     return msg;
-    }
+  }
 
-    }  // namespace isweep_planner
+  visualization_msgs::Marker low_marker;
+  low_marker.header.frame_id = frame_id;
+  low_marker.header.stamp = reference.stamp;
+  low_marker.ns = "risk_reference_low";
+  low_marker.id = 0;
+  low_marker.type = visualization_msgs::Marker::LINE_LIST;
+  low_marker.action = visualization_msgs::Marker::ADD;
+  low_marker.scale.x = 0.06;
+  low_marker.color.a = 0.9;
+  low_marker.color.r = 0.1;
+  low_marker.color.g = 0.8;
+  low_marker.color.b = 0.2;
+
+  visualization_msgs::Marker high_marker = low_marker;
+  high_marker.ns = "risk_reference_high";
+  high_marker.id = 2;
+  high_marker.color.r = 0.95;
+  high_marker.color.g = 0.2;
+  high_marker.color.b = 0.15;
+
+  visualization_msgs::Marker medium_marker = low_marker;
+  medium_marker.ns = "risk_reference_medium";
+  medium_marker.id = 1;
+  medium_marker.color.r = 0.95;
+  medium_marker.color.g = 0.70;
+  medium_marker.color.b = 0.10;
+
+  for (size_t i = 1; i < reference.points.size(); ++i) {
+    const GlobalReferencePointData& prev = reference.points[i - 1];
+    const GlobalReferencePointData& curr = reference.points[i];
+    visualization_msgs::Marker& active_marker =
+        curr.risk_level >= RiskLevelRank(RiskLevel::HIGH)
+            ? high_marker
+            : (curr.risk_level >= RiskLevelRank(RiskLevel::MEDIUM)
+                   ? medium_marker
+                   : low_marker);
+
+    geometry_msgs::Point p0;
+    p0.x = prev.x;
+    p0.y = prev.y;
+    p0.z = 0.05;
+
+    geometry_msgs::Point p1;
+    p1.x = curr.x;
+    p1.y = curr.y;
+    p1.z = 0.05;
+
+    active_marker.points.push_back(p0);
+    active_marker.points.push_back(p1);
+  }
+
+  msg.markers.push_back(low_marker);
+  msg.markers.push_back(medium_marker);
+  msg.markers.push_back(high_marker);
+  return msg;
+}
+
+visualization_msgs::MarkerArray RosVisualizer::MakeLocalPlannerMarkers(
+    const LocalPlanningResult& result, const std::string& frame_id) {
+  visualization_msgs::MarkerArray msg;
+
+  visualization_msgs::Marker delete_marker;
+  delete_marker.action = visualization_msgs::Marker::DELETEALL;
+  msg.markers.push_back(delete_marker);
+
+  if (result.local_path.empty()) {
+    return msg;
+  }
+
+  visualization_msgs::Marker path_marker;
+  path_marker.header.frame_id = frame_id;
+  path_marker.header.stamp = ros::Time::now();
+  path_marker.ns = "local_plan";
+  path_marker.id = 0;
+  path_marker.type = visualization_msgs::Marker::LINE_STRIP;
+  path_marker.action = visualization_msgs::Marker::ADD;
+  path_marker.scale.x = 0.08;
+  path_marker.color.a = 0.95;
+  if (result.need_replan) {
+    path_marker.color.r = 0.95;
+    path_marker.color.g = 0.15;
+    path_marker.color.b = 0.10;
+  } else if (result.mode == LocalPlannerMode::HIGH_RISK_STRICT) {
+    path_marker.color.r = 0.95;
+    path_marker.color.g = 0.55;
+    path_marker.color.b = 0.10;
+  } else {
+    path_marker.color.r = 0.10;
+    path_marker.color.g = 0.55;
+    path_marker.color.b = 0.95;
+  }
+
+  for (size_t i = 0; i < result.local_path.size(); ++i) {
+    geometry_msgs::Point point;
+    point.x = result.local_path[i].x;
+    point.y = result.local_path[i].y;
+    point.z = 0.08;
+    path_marker.points.push_back(point);
+  }
+  msg.markers.push_back(path_marker);
+
+  visualization_msgs::Marker ref_marker = path_marker;
+  ref_marker.ns = "local_reference_window";
+  ref_marker.id = 1;
+  ref_marker.scale.x = 0.03;
+  ref_marker.color.r = 1.0;
+  ref_marker.color.g = 1.0;
+  ref_marker.color.b = 1.0;
+  ref_marker.color.a = 0.55;
+  ref_marker.points.clear();
+  for (size_t i = 0; i < result.local_reference.size(); ++i) {
+    geometry_msgs::Point point;
+    point.x = result.local_reference[i].x;
+    point.y = result.local_reference[i].y;
+    point.z = 0.03;
+    ref_marker.points.push_back(point);
+  }
+  msg.markers.push_back(ref_marker);
+  return msg;
+}
+
+}  // namespace isweep_planner

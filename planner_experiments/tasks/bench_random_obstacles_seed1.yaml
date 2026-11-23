@@ -1,0 +1,23 @@
+map: bench_random_obstacles_seed1
+map_yaml: ../maps/bench_random_obstacles_seed1/map.yaml
+robot_shape: long_rectangle
+robot_yaml: ../config/robot_shapes/long_rectangle.yaml
+
+generation:
+  type: hand_authored_key_tasks
+  scenario: seeded_clutter_diagonal_crossing
+  map_random_seed: 1
+  coordinate_units: metres
+  angle_units: radians
+  endpoint_validation_step_m: 0.01
+
+tasks:
+  - id: task_001
+    description: lower_left_to_upper_right_through_clutter
+    start: [1.5, 1.5, 0.65]
+    goal: [8.5, 6.5, 0.65]
+
+  - id: task_002
+    description: upper_left_to_lower_right_through_clutter
+    start: [1.2, 6.0, -0.6]
+    goal: [8.8, 2.0, -0.6]

@@ -2,10 +2,15 @@
   <!-- Optional map_server:
        set use_map_server:=true when ros-noetic-map-server is installed
        and you want to load the bundled office map -->
-  <arg name="use_map_server" default="false" />
+  <arg name="use_map_server" default="true" />
   <arg name="map_file" default="$(find isweep_planner)/maps/map.yaml" />
   <arg name="strict_rebuild_case" default="" />
   <arg name="use_start_goal_params" default="false" />
+  <arg name="enable_three_level_planner" default="true" />
+  <arg name="planner_config" default="$(find isweep_planner)/config/planner.yaml" />
+  <arg name="run_local_planner" default="false" />
+  <arg name="planner_method" default="current_full" />
+  <arg name="rviz" default="true" />
   <node if="$(arg use_map_server)"
         name="map_server"
         pkg="map_server"
@@ -17,9 +22,13 @@
   <include file="$(find isweep_planner)/launch/planner.launch">
     <arg name="strict_rebuild_case" value="$(arg strict_rebuild_case)" />
     <arg name="use_start_goal_params" value="$(arg use_start_goal_params)" />
+    <arg name="enable_three_level_planner" value="$(arg enable_three_level_planner)" />
+    <arg name="planner_method" value="$(arg planner_method)" />
+    <arg name="planner_config" value="$(arg planner_config)" />
+    <arg name="run_local_planner" value="$(arg run_local_planner)" />
   </include>
 
   <!-- RViz -->
-  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find isweep_planner)/config/demo.rviz"
+  <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz" args="-d $(find isweep_planner)/config/demo.rviz"
         required="false" />
 </launch>

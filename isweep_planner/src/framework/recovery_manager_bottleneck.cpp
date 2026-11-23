@@ -2,8 +2,44 @@
 #include "isweep_planner/ros_interface/ros_visualizer.h"
 #include "isweep_planner/core/trajectory_utils.h"
 #include "isweep_planner/global_search/swept_astar.h"
+#include <algorithm>
+#include <cmath>
 #include <ros/ros.h>
 namespace isweep_planner {
+
+namespace {
+
+void SetLocalReuseMetrics(
+    const Trajectory& original,
+    const std::vector<Trajectory>& original_segment_trajectories,
+    const std::vector<std::pair<size_t, size_t>>& replaced_ranges,
+    double patch_length,
+    SvsdfRuntime::CandidateResult* candidate) {
+  if (candidate == nullptr || original.empty() || replaced_ranges.empty()) return;
+  const double original_length = ApproximateTrajectoryLength(original);
+  if (!std::isfinite(original_length) || original_length <= 1e-9) return;
+
+  std::vector<bool> replaced(original_segment_trajectories.size(), false);
+  for (const auto& range : replaced_ranges) {
+    if (range.first > range.second || range.first >= replaced.size()) continue;
+    const size_t end = std::min(range.second, replaced.size() - 1);
+    for (size_t i = range.first; i <= end; ++i) replaced[i] = true;
+  }
+  double replanned_length = 0.0;
+  for (size_t i = 0; i < replaced.size(); ++i) {
+    if (replaced[i]) {
+      replanned_length +=
+          ApproximateTrajectoryLength(original_segment_trajectories[i]);
+    }
+  }
+  candidate->original_trajectory_length_m = original_length;
+  candidate->replanned_length_m = std::min(original_length, replanned_length);
+  candidate->patch_length_m = std::max(0.0, patch_length);
+  candidate->trajectory_reuse_ratio = LocalTrajectoryReuseRatio(
+      original_length, candidate->replanned_length_m);
+}
+
+}  // namespace
 
 bool RecoveryManager::TryRecoverBottleneck(
 
@@ -78,19 +114,19 @@ bool RecoveryManager::TryRecoverBottleneck(
     size_t risky_end = hotspot_culprit_index;
     if (segments[hotspot_culprit_index].risk == RiskLevel::LOW) {
       if (hotspot_culprit_index > 0 &&
-          segments[hotspot_culprit_index - 1].risk == RiskLevel::HIGH) {
+          segments[hotspot_culprit_index - 1].risk != RiskLevel::LOW) {
         risky_begin = hotspot_culprit_index - 1;
       }
       if (hotspot_culprit_index + 1 < segment_count &&
-          segments[hotspot_culprit_index + 1].risk == RiskLevel::HIGH) {
+          segments[hotspot_culprit_index + 1].risk != RiskLevel::LOW) {
         risky_end = hotspot_culprit_index + 1;
       }
     }
-    while (risky_begin > 0 && segments[risky_begin - 1].risk == RiskLevel::HIGH) {
+    while (risky_begin > 0 && segments[risky_begin - 1].risk != RiskLevel::LOW) {
       --risky_begin;
     }
     while (risky_end + 1 < segment_count &&
-           segments[risky_end + 1].risk == RiskLevel::HIGH) {
+           segments[risky_end + 1].risk != RiskLevel::LOW) {
       ++risky_end;
     }
 
@@ -138,12 +174,48 @@ bool RecoveryManager::TryRecoverBottleneck(
     size_t begin = 0;
     size_t end = 0;
     Trajectory replacement;
+    std::vector<MotionSegment> replacement_segments;
+    std::vector<Trajectory> replacement_trajectories;
     double local_clearance = -kInf;
-    int support_points = 0;
-    int high_risk_segments = 0;
     int escalated_segments = 0;
   };
   std::vector<PartialRecoveryPatch> partial_patches;
+  const auto install_replacement_metadata =
+      [&](size_t begin, size_t end,
+          const std::vector<MotionSegment>& replacement_segments,
+          const std::vector<Trajectory>& replacement_trajectories,
+          SvsdfRuntime::CandidateResult* candidate) {
+        if (candidate == nullptr || replacement_segments.empty() ||
+            replacement_segments.size() != replacement_trajectories.size()) {
+          return;
+        }
+        candidate->segments.clear();
+        candidate->segment_trajectories.clear();
+        for (size_t i = 0; i < begin; ++i) {
+          candidate->segments.push_back(segments[i]);
+          candidate->segment_trajectories.push_back(segment_trajectories[i]);
+        }
+        candidate->segments.insert(candidate->segments.end(),
+                                   replacement_segments.begin(),
+                                   replacement_segments.end());
+        candidate->segment_trajectories.insert(
+            candidate->segment_trajectories.end(),
+            replacement_trajectories.begin(), replacement_trajectories.end());
+        for (size_t i = end + 1; i < segment_count; ++i) {
+          candidate->segments.push_back(segments[i]);
+          candidate->segment_trajectories.push_back(segment_trajectories[i]);
+        }
+        candidate->support_points = CountSupportPoints(candidate->segments);
+        candidate->high_risk_segments = 0;
+        candidate->medium_risk_segments = 0;
+        for (const MotionSegment& segment : candidate->segments) {
+          if (segment.risk == RiskLevel::HIGH) {
+            ++candidate->high_risk_segments;
+          } else if (segment.risk == RiskLevel::MEDIUM) {
+            ++candidate->medium_risk_segments;
+          }
+        }
+      };
   std::set<std::pair<size_t, size_t>> processed_windows;
   size_t active_culprit_index = culprit_index;
   ClearanceProbe active_hotspot = worst;
@@ -240,7 +312,23 @@ bool RecoveryManager::TryRecoverBottleneck(
         }
 
         Trajectory patch_traj;
-        if (!runtime_->SolveStrictSegment(patch_waypoints, &patch_traj) || patch_traj.empty()) {
+        bool strict_patch_solved = false;
+        if (runtime_->experiment_options_.strict_local_patch) {
+          ++runtime_->experiment_telemetry_.strict_patch_attempt_count;
+          strict_patch_solved =
+              runtime_->SolveStrictSegment(
+                  patch_waypoints, &patch_traj, true, true,
+                  FullSvsdfCallSource::VALIDATION_RECOVERY) &&
+              !patch_traj.empty();
+          if (strict_patch_solved) {
+            ++runtime_->experiment_telemetry_.strict_patch_success_count;
+          }
+        }
+        if (!strict_patch_solved) {
+          if (runtime_->experiment_options_.force_all_strict) {
+            ++current_diag.single_patch_solver_failures;
+            return;
+          }
           patch_traj = runtime_->optimizer_.optimizeSE2(
               patch_waypoints, 1.5 * runtime_->EstimateSegmentTime(patch_waypoints));
         }
@@ -269,9 +357,18 @@ bool RecoveryManager::TryRecoverBottleneck(
           partial.begin = begin;
           partial.end = end;
           partial.replacement = patch_traj;
+          MotionSegment replacement_segment;
+          replacement_segment.risk = EffectiveSolverLevel(
+              runtime_->experiment_options_,
+              strict_patch_solved ? RiskLevel::HIGH : RiskLevel::MEDIUM);
+          replacement_segment.max_risk_score =
+              strict_patch_solved ? 1.0 : 0.5;
+          replacement_segment.mean_risk_score =
+              replacement_segment.max_risk_score;
+          replacement_segment.waypoints = patch_waypoints;
+          partial.replacement_segments.assign(1, replacement_segment);
+          partial.replacement_trajectories.assign(1, patch_traj);
           partial.local_clearance = patch_clearance;
-          partial.support_points = static_cast<int>(patch_waypoints.size());
-          partial.high_risk_segments = 1;
           partial.escalated_segments = CountHighRiskSegments(segments, begin, end + 1);
           bool replaced = false;
           for (PartialRecoveryPatch& existing : partial_patches) {
@@ -309,13 +406,19 @@ bool RecoveryManager::TryRecoverBottleneck(
         candidate.min_clearance = min_clearance;
         candidate.max_vel = max_vel;
         candidate.max_acc = max_acc;
-        candidate.support_points =
-            CountSupportPoints(segments, 0, begin) +
-            static_cast<int>(patch_waypoints.size()) +
-            CountSupportPoints(segments, end + 1, segment_count);
-        candidate.high_risk_segments =
-            CountHighRiskSegments(segments, 0, begin) + 1 +
-            CountHighRiskSegments(segments, end + 1, segment_count);
+        MotionSegment replacement_segment;
+        replacement_segment.risk = EffectiveSolverLevel(
+            runtime_->experiment_options_,
+            strict_patch_solved ? RiskLevel::HIGH : RiskLevel::MEDIUM);
+        replacement_segment.max_risk_score =
+            strict_patch_solved ? 1.0 : 0.5;
+        replacement_segment.mean_risk_score =
+            replacement_segment.max_risk_score;
+        replacement_segment.waypoints = patch_waypoints;
+        install_replacement_metadata(begin, end, {replacement_segment},
+                                     {patch_traj}, &candidate);
+        SetLocalReuseMetrics(current_traj, segment_trajectories, {{begin, end}},
+                             ApproximateTrajectoryLength(patch_traj), &candidate);
         candidate.escalated_segments = std::max(
             candidate.escalated_segments,
             CountHighRiskSegments(segments, begin, end + 1));
@@ -343,8 +446,30 @@ bool RecoveryManager::TryRecoverBottleneck(
         ++current_diag.segment_patch_attempts;
 
         std::vector<Trajectory> patch_segment_trajectories(patch_segments.size());
-        std::vector<bool> escalated(patch_segments.size(), false);
+        std::vector<RiskLevel> solved_levels;
+        solved_levels.reserve(patch_segments.size());
+        for (const MotionSegment& segment : patch_segments) {
+          solved_levels.push_back(EffectiveSolverLevel(
+              runtime_->experiment_options_, segment.risk));
+        }
         int escalated_segments = 0;
+        const auto solve_patch_level =
+            [&](size_t patch_index, RiskLevel level, Trajectory* trajectory) {
+              const std::vector<SE2State>& waypoints =
+                  patch_segments[patch_index].waypoints;
+              const double seg_time = runtime_->EstimateSegmentTime(waypoints);
+              if (level == RiskLevel::LOW) {
+                return runtime_->OptimizeLowRiskSegment(waypoints, seg_time,
+                                                        trajectory);
+              }
+              if (level == RiskLevel::MEDIUM) {
+                return runtime_->OptimizeMediumRiskSegment(waypoints, seg_time,
+                                                           trajectory);
+              }
+              return runtime_->SolveStrictSegment(
+                  waypoints, trajectory, true, true,
+                  FullSvsdfCallSource::VALIDATION_RECOVERY);
+            };
         for (size_t patch_index = 0; patch_index < patch_segments.size(); ++patch_index) {
           if (recover_timed_out()) {
             return;
@@ -353,33 +478,33 @@ bool RecoveryManager::TryRecoverBottleneck(
             return;
           }
 
-          const double seg_time =
-              runtime_->EstimateSegmentTime(patch_segments[patch_index].waypoints);
           Trajectory patch_segment_traj;
-          if (patch_segments[patch_index].risk == RiskLevel::HIGH) {
-            if (!runtime_->SolveStrictSegment(patch_segments[patch_index].waypoints,
-                                    &patch_segment_traj)) {
-              ++current_diag.segment_patch_solver_failures;
-              return;
-            }
-          } else {
-            if (!runtime_->OptimizeLowRiskSegment(patch_segments[patch_index].waypoints, seg_time,
-                                        &patch_segment_traj)) {
-              ++current_diag.segment_patch_solver_failures;
-              return;
-            }
-            double segment_clearance = -kInf;
-            if (!runtime_->IsTrajectoryFeasible(patch_segment_traj, &segment_clearance, nullptr,
-                                      nullptr)) {
-              if (!runtime_->SolveStrictSegment(patch_segments[patch_index].waypoints,
-                                      &patch_segment_traj)) {
+          RiskLevel level = solved_levels[patch_index];
+          while (true) {
+            if (!solve_patch_level(patch_index, level, &patch_segment_traj)) {
+              if (level == RiskLevel::HIGH) {
                 ++current_diag.segment_patch_solver_failures;
                 return;
               }
-              escalated[patch_index] = true;
+              level = UpgradeRiskLevel(level);
               ++escalated_segments;
+              continue;
             }
+            double segment_clearance = -kInf;
+            if (runtime_->IsTrajectoryFeasible(patch_segment_traj,
+                                               &segment_clearance, nullptr,
+                                               nullptr)) {
+              break;
+            }
+            if (level == RiskLevel::HIGH) {
+              ++current_diag.segment_patch_solver_failures;
+              return;
+            }
+            level = UpgradeRiskLevel(level);
+            patch_segment_traj = Trajectory();
+            ++escalated_segments;
           }
+          solved_levels[patch_index] = level;
 
           if (patch_segment_traj.empty()) {
             return;
@@ -389,33 +514,38 @@ bool RecoveryManager::TryRecoverBottleneck(
 
         Trajectory middle = runtime_->optimizer_.stitch(patch_segments, patch_segment_trajectories);
         double middle_clearance = -kInf;
-        if (middle.empty() ||
-            !runtime_->IsTrajectoryFeasible(middle, &middle_clearance, nullptr, nullptr)) {
+        for (int upgrade_pass = 0;
+             (middle.empty() ||
+              !runtime_->IsTrajectoryFeasible(middle, &middle_clearance, nullptr,
+                                               nullptr)) &&
+             upgrade_pass < 2;
+             ++upgrade_pass) {
           ++current_diag.segment_patch_middle_infeasible;
           note_best_clearance(middle_clearance, label, "local");
           bool upgraded = false;
-          for (size_t patch_index = 0; patch_index < patch_segments.size(); ++patch_index) {
-            if (patch_segments[patch_index].risk == RiskLevel::LOW &&
-                !escalated[patch_index]) {
-              if (!runtime_->SolveStrictSegment(patch_segments[patch_index].waypoints,
-                                      &patch_segment_trajectories[patch_index])) {
-                return;
-              }
-              escalated[patch_index] = true;
-              ++escalated_segments;
-              upgraded = true;
+          for (size_t patch_index = 0; patch_index < patch_segments.size();
+               ++patch_index) {
+            if (solved_levels[patch_index] == RiskLevel::HIGH) continue;
+            const RiskLevel next_level = UpgradeRiskLevel(solved_levels[patch_index]);
+            if (!solve_patch_level(patch_index, next_level,
+                                   &patch_segment_trajectories[patch_index])) {
+              continue;
             }
+            solved_levels[patch_index] = next_level;
+            ++escalated_segments;
+            upgraded = true;
           }
           if (!upgraded) {
-            return;
+            break;
           }
           middle = runtime_->optimizer_.stitch(patch_segments, patch_segment_trajectories);
-          if (middle.empty() ||
-              !runtime_->IsTrajectoryFeasible(middle, &middle_clearance, nullptr, nullptr)) {
-            ++current_diag.segment_patch_middle_infeasible;
-            note_best_clearance(middle_clearance, label, "local");
-            return;
-          }
+        }
+        if (middle.empty() ||
+            !runtime_->IsTrajectoryFeasible(middle, &middle_clearance, nullptr,
+                                             nullptr)) {
+          ++current_diag.segment_patch_middle_infeasible;
+          note_best_clearance(middle_clearance, label, "local");
+          return;
         }
         note_best_clearance(middle_clearance, label, "local");
 
@@ -431,11 +561,12 @@ bool RecoveryManager::TryRecoverBottleneck(
           partial.begin = begin;
           partial.end = end;
           partial.replacement = middle;
+          partial.replacement_segments = patch_segments;
+          for (size_t i = 0; i < partial.replacement_segments.size(); ++i) {
+            partial.replacement_segments[i].risk = solved_levels[i];
+          }
+          partial.replacement_trajectories = patch_segment_trajectories;
           partial.local_clearance = middle_clearance;
-          partial.support_points =
-              CountSupportPoints(patch_segments, 0, patch_segments.size());
-          partial.high_risk_segments =
-              CountHighRiskSegments(patch_segments, 0, patch_segments.size());
           partial.escalated_segments = escalated_segments;
           bool replaced = false;
           for (PartialRecoveryPatch& existing : partial_patches) {
@@ -473,14 +604,14 @@ bool RecoveryManager::TryRecoverBottleneck(
         candidate.min_clearance = min_clearance;
         candidate.max_vel = max_vel;
         candidate.max_acc = max_acc;
-        candidate.support_points =
-            CountSupportPoints(segments, 0, begin) +
-            CountSupportPoints(patch_segments, 0, patch_segments.size()) +
-            CountSupportPoints(segments, end + 1, segment_count);
-        candidate.high_risk_segments =
-            CountHighRiskSegments(segments, 0, begin) +
-            CountHighRiskSegments(patch_segments, 0, patch_segments.size()) +
-            CountHighRiskSegments(segments, end + 1, segment_count);
+        std::vector<MotionSegment> solved_patch_segments = patch_segments;
+        for (size_t i = 0; i < solved_patch_segments.size(); ++i) {
+          solved_patch_segments[i].risk = solved_levels[i];
+        }
+        install_replacement_metadata(begin, end, solved_patch_segments,
+                                     patch_segment_trajectories, &candidate);
+        SetLocalReuseMetrics(current_traj, segment_trajectories, {{begin, end}},
+                             ApproximateTrajectoryLength(middle), &candidate);
         candidate.escalated_segments =
             std::max(candidate.escalated_segments, escalated_segments);
 
@@ -593,6 +724,7 @@ bool RecoveryManager::TryRecoverBottleneck(
         hotspot_radius_scales.push_back(1.5);
         hotspot_radius_scales.push_back(2.0);
       }
+      if (runtime_->experiment_options_.swept_astar) {
       for (double radius_scale : hotspot_radius_scales) {
         if (recover_timed_out()) {
           break;
@@ -654,13 +786,17 @@ bool RecoveryManager::TryRecoverBottleneck(
             }
             options.min_safe_yaw_count = min_safe_yaw_count;
             ++current_diag.corridor_search_attempts;
+            ++runtime_->experiment_telemetry_.swept_astar_attempt_count;
             const AstarSearchResult corridor_result =
                 corridor_astar.search(start_anchor.position(), goal_anchor.position(),
                                       options);
+            runtime_->experiment_telemetry_.swept_astar_expanded_nodes +=
+                corridor_result.expanded_nodes;
             if (!corridor_result.success || corridor_result.path.size() < 2) {
               continue;
             }
             ++current_diag.corridor_search_successes;
+            ++runtime_->experiment_telemetry_.swept_astar_success_count;
 
             const TopoPath corridor_topo = BuildTopoPathFromCorridor(
                 corridor_result.path, runtime_->grid_map_, runtime_->collision_checker_, corridor_clearance,
@@ -684,18 +820,27 @@ bool RecoveryManager::TryRecoverBottleneck(
           }
         }
       }
+      }
 
       std::vector<SE2State> patch_waypoints;
+      if (!runtime_->experiment_options_.hybrid_astar_recovery) {
+        log_window_diag(begin, end);
+        if (found) break;
+        continue;
+      }
       if (recover_timed_out()) {
         continue;
       }
       ++current_diag.direct_plan_attempts;
-      if (!runtime_->hybrid_astar_.plan(start_anchor, goal_anchor, patch_waypoints) ||
+      ++runtime_->experiment_telemetry_.hybrid_astar_attempt_count;
+      if (!runtime_->hybrid_astar_.plan(start_anchor, goal_anchor, patch_waypoints,
+                                        RemainingBudgetSec(deadline)) ||
           patch_waypoints.size() < 2) {
         log_window_diag(begin, end);
         continue;
       }
       ++current_diag.direct_plan_successes;
+      ++runtime_->experiment_telemetry_.hybrid_astar_success_count;
 
       const SE2State patch_start = patch_waypoints.front();
       const SE2State patch_goal = patch_waypoints.back();
@@ -742,18 +887,23 @@ bool RecoveryManager::TryRecoverBottleneck(
 
           const SE2State via_state(via_pos.x(), via_pos.y(), active_hotspot.state.yaw);
           std::vector<SE2State> first_leg;
-          if (!runtime_->hybrid_astar_.plan(start_anchor, via_state, first_leg) ||
+          ++runtime_->experiment_telemetry_.hybrid_astar_attempt_count;
+          if (!runtime_->hybrid_astar_.plan(start_anchor, via_state, first_leg,
+                                            RemainingBudgetSec(deadline)) ||
               first_leg.size() < 2) {
             continue;
           }
 
           const SE2State recovered_via = first_leg.back();
           std::vector<SE2State> second_leg;
-          if (!runtime_->hybrid_astar_.plan(recovered_via, goal_anchor, second_leg) ||
+          ++runtime_->experiment_telemetry_.hybrid_astar_attempt_count;
+          if (!runtime_->hybrid_astar_.plan(recovered_via, goal_anchor, second_leg,
+                                            RemainingBudgetSec(deadline)) ||
               second_leg.size() < 2) {
             continue;
           }
           ++current_diag.detour_plan_successes;
+          runtime_->experiment_telemetry_.hybrid_astar_success_count += 2;
 
           if ((first_leg.front().position() - start_anchor.position()).norm() >
                   endpoint_pos_tolerance ||
@@ -814,31 +964,33 @@ bool RecoveryManager::TryRecoverBottleneck(
               });
 
     Trajectory rebuilt;
+    std::vector<MotionSegment> rebuilt_segments;
+    std::vector<Trajectory> rebuilt_segment_trajectories;
     size_t segment_cursor = 0;
-    int rebuilt_support_points = 0;
-    int rebuilt_high_risk_segments = 0;
     int rebuilt_escalated_segments = 0;
     for (const PartialRecoveryPatch& patch : selected_patches) {
       for (size_t i = segment_cursor; i < patch.begin && i < segment_trajectories.size(); ++i) {
         AppendTrajectoryPieces(segment_trajectories[i], &rebuilt);
+        rebuilt_segments.push_back(segments[i]);
+        rebuilt_segment_trajectories.push_back(segment_trajectories[i]);
       }
       AppendTrajectoryPieces(patch.replacement, &rebuilt);
-      rebuilt_support_points += CountSupportPoints(segments, segment_cursor, patch.begin);
-      rebuilt_high_risk_segments +=
-          CountHighRiskSegments(segments, segment_cursor, patch.begin);
-      rebuilt_support_points += patch.support_points;
-      rebuilt_high_risk_segments += patch.high_risk_segments;
+      rebuilt_segments.insert(rebuilt_segments.end(),
+                              patch.replacement_segments.begin(),
+                              patch.replacement_segments.end());
+      rebuilt_segment_trajectories.insert(
+          rebuilt_segment_trajectories.end(),
+          patch.replacement_trajectories.begin(),
+          patch.replacement_trajectories.end());
       rebuilt_escalated_segments =
           std::max(rebuilt_escalated_segments, patch.escalated_segments);
       segment_cursor = patch.end + 1;
     }
     for (size_t i = segment_cursor; i < segment_trajectories.size(); ++i) {
       AppendTrajectoryPieces(segment_trajectories[i], &rebuilt);
+      rebuilt_segments.push_back(segments[i]);
+      rebuilt_segment_trajectories.push_back(segment_trajectories[i]);
     }
-    rebuilt_support_points += CountSupportPoints(segments, segment_cursor, segment_count);
-    rebuilt_high_risk_segments +=
-        CountHighRiskSegments(segments, segment_cursor, segment_count);
-
     double min_clearance = -kInf;
     double max_vel = 0.0;
     double max_acc = 0.0;
@@ -853,10 +1005,28 @@ bool RecoveryManager::TryRecoverBottleneck(
       best.min_clearance = min_clearance;
       best.max_vel = max_vel;
       best.max_acc = max_acc;
-      best.support_points = rebuilt_support_points;
-      best.high_risk_segments = rebuilt_high_risk_segments;
+      best.segments = rebuilt_segments;
+      best.segment_trajectories = rebuilt_segment_trajectories;
+      best.support_points = CountSupportPoints(best.segments);
+      best.high_risk_segments = 0;
+      best.medium_risk_segments = 0;
+      for (const MotionSegment& segment : best.segments) {
+        if (segment.risk == RiskLevel::HIGH) {
+          ++best.high_risk_segments;
+        } else if (segment.risk == RiskLevel::MEDIUM) {
+          ++best.medium_risk_segments;
+        }
+      }
       best.escalated_segments =
           std::max(best.escalated_segments, rebuilt_escalated_segments);
+      std::vector<std::pair<size_t, size_t>> replaced_ranges;
+      double combined_patch_length = 0.0;
+      for (const PartialRecoveryPatch& patch : selected_patches) {
+        replaced_ranges.emplace_back(patch.begin, patch.end);
+        combined_patch_length += ApproximateTrajectoryLength(patch.replacement);
+      }
+      SetLocalReuseMetrics(current_traj, segment_trajectories, replaced_ranges,
+                           combined_patch_length, &best);
       found = true;
     }
   }

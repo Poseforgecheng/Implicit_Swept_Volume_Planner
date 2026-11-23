@@ -212,6 +212,7 @@ namespace shape
                 int bytes_len_of_last_dim = (kernel_size + 7) / 8;
                 int bytes_len = kernel_size * bytes_len_of_last_dim;
                 X_size = Y_size = kernel_size;
+                totalsize = bytes_len;
                 map = new uint8_t[bytes_len];
                 memset(map, 0, bytes_len);
 
@@ -390,7 +391,6 @@ namespace shape
         }
         virtual ~BasicShape()
         {
-            std::cout << "==========delete BasicShape=========" << std::endl;
             delete[] num_sdf_map;
             delete[] shape_kernels;
             delete[] byte_shape_kernels;

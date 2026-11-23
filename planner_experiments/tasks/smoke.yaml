@@ -1,0 +1,17 @@
+map: smoke_empty
+map_yaml: ../maps/smoke_empty/map.yaml
+robot_shape: long_rectangle
+robot_yaml: ../config/robot_shapes/long_rectangle.yaml
+
+generation:
+  type: hand_authored_smoke
+  coordinate_units: metres
+  angle_units: radians
+
+tasks:
+  - id: task_001
+    start: [1.0, 1.5, 0.0]
+    goal: [7.0, 1.5, 0.0]
+  - id: task_002
+    start: [1.0, 4.5, 0.0]
+    goal: [7.0, 4.5, 0.5]

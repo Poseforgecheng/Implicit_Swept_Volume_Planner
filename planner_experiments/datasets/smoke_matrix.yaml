@@ -1,0 +1,29 @@
+schema_version: 1
+
+# Matrix-chain integration test only.  These samples are not paper data.
+matrix:
+  maps:
+    - name: smoke_empty_010
+      yaml: package://planner_experiments/maps/smoke_empty/map.yaml
+      metadata:
+        benchmark_group: smoke
+    - name: smoke_empty_005
+      yaml: package://planner_experiments/maps/smoke_empty_005/map.yaml
+      metadata:
+        benchmark_group: smoke
+
+  robots:
+    - name: circle
+      yaml: package://planner_experiments/config/robot_shapes/circle.yaml
+    - name: long_rectangle
+      yaml: package://planner_experiments/config/robot_shapes/long_rectangle.yaml
+
+  task_generation:
+    num_tasks: 1
+    seed: 7
+    min_distance: 2.0
+    yaw_mode: zero
+    different_topology_direction: false
+
+  metadata:
+    dataset_role: integration_smoke

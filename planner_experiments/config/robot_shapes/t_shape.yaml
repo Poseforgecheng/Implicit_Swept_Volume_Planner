@@ -1,0 +1,12 @@
+name: t_shape
+footprint:
+  - [-0.10, -0.25]
+  - [ 0.20, -0.25]
+  - [ 0.20,  0.25]
+  - [-0.10,  0.25]
+  - [-0.10,  0.09]
+  - [-0.30,  0.09]
+  - [-0.30, -0.09]
+  - [-0.10, -0.09]
+mesh_path: package://planner_experiments/meshes/t_shape.obj
+safety_margin: 0.0

@@ -33,6 +33,12 @@ int TrajOptimizer::optimize_traj_lmbm(const Eigen::Matrix3d &initS,
   param.max_stepsize     = 2.0;      // was 1.5
   param.bundle_size      = 4;        // was 2
   param.distance_measure = 0.1;      // was 0.5
+  param.max_iterations = std::max(1, conf.full_svsdf_max_iterations);
+  param.max_evaluations = std::max(param.max_iterations,
+                                   conf.full_svsdf_max_evaluations);
+  param.timeout = static_cast<float>(
+      std::max(0.01, conf.full_svsdf_timeout_sec));
+  param.verbose = conf.full_svsdf_verbose;
   int ret = lmbm::lmbm_optimize(total_opt_variable_num,
                                 x_variable,
                                 &final_cost,

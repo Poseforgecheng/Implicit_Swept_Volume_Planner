@@ -38,14 +38,60 @@ struct GridIndex {
 
 // Risk level for trajectory segments
 enum class RiskLevel {
-  LOW,   // R² optimization sufficient
-  HIGH   // SE(2) optimization required
+  LOW = 0,     // lightweight R^2 optimization
+  MEDIUM = 1,  // explicit SE(2) state optimization
+  HIGH = 2     // strict SE(2) + full SVSDF optimization
+};
+
+inline int RiskLevelRank(RiskLevel level) {
+  return static_cast<int>(level);
+}
+
+inline RiskLevel UpgradeRiskLevel(RiskLevel level) {
+  if (level == RiskLevel::LOW) return RiskLevel::MEDIUM;
+  return RiskLevel::HIGH;
+}
+
+inline const char* RiskLevelName(RiskLevel level) {
+  switch (level) {
+    case RiskLevel::LOW:
+      return "LOW";
+    case RiskLevel::MEDIUM:
+      return "MEDIUM";
+    case RiskLevel::HIGH:
+      return "HIGH";
+  }
+  return "UNKNOWN";
+}
+
+// Continuous risk observation attached to one path state.  All component
+// risks and the fused score are normalized to [0, 1].  Raw geometric values
+// are retained so experiments do not need to reconstruct them from labels.
+struct RiskSample {
+  SE2State state;
+  double footprint_clearance = -std::numeric_limits<double>::infinity();
+  double effective_clearance = -std::numeric_limits<double>::infinity();
+  double feasible_yaw_width = 0.0;
+  double feasible_yaw_overlap = 0.0;
+  double correction_distance = 0.0;
+  double uncertainty_erosion = 0.0;
+
+  double clearance_risk = 1.0;
+  double orientation_width_risk = 1.0;
+  double orientation_continuity_risk = 1.0;
+  double correction_risk = 0.0;
+  double uncertainty_risk = 1.0;
+  double score = 1.0;
+  RiskLevel level = RiskLevel::HIGH;
 };
 
 // A segment of the SE(2) motion sequence
 struct MotionSegment {
   std::vector<SE2State> waypoints;
   RiskLevel risk = RiskLevel::LOW;
+  std::vector<RiskSample> risk_profile;
+  double max_risk_score = 0.0;
+  double mean_risk_score = 0.0;
 };
 
 struct PlanningStats {
@@ -135,6 +181,14 @@ struct YawPolyPiece {
     }
     return val;
   }
+
+  double acceleration(double t) const {
+    double val = 20.0 * coeffs(0, 5);
+    for (int i = 4; i >= 2; --i) {
+      val = val * t + coeffs(0, i) * static_cast<double>(i * (i - 1));
+    }
+    return val;
+  }
 };
 
 // Full trajectory: piecewise polynomial for (x, y) and yaw
@@ -198,6 +252,17 @@ struct Trajectory {
     for (size_t i = 0; i < yaw_pieces.size(); ++i) {
       if (t <= acc + yaw_pieces[i].duration || i + 1 == yaw_pieces.size()) {
         return yaw_pieces[i].velocity(t - acc);
+      }
+      acc += yaw_pieces[i].duration;
+    }
+    return 0.0;
+  }
+
+  double sampleYawAcceleration(double t) const {
+    double acc = 0.0;
+    for (size_t i = 0; i < yaw_pieces.size(); ++i) {
+      if (t <= acc + yaw_pieces[i].duration || i + 1 == yaw_pieces.size()) {
+        return yaw_pieces[i].acceleration(t - acc);
       }
       acc += yaw_pieces[i].duration;
     }
@@ -313,5 +378,3 @@ double interpolatedClearance(const SE2State& from, const SE2State& to,
 }
 
 }  // namespace isweep_planner
-
-

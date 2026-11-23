@@ -1,0 +1,22 @@
+map: bench_dual_route
+map_yaml: ../maps/bench_dual_route/map.yaml
+robot_shape: long_rectangle
+robot_yaml: ../config/robot_shapes/long_rectangle.yaml
+
+generation:
+  type: hand_authored_key_tasks
+  scenario: symmetric_dual_route
+  coordinate_units: metres
+  angle_units: radians
+  endpoint_validation_step_m: 0.01
+
+tasks:
+  - id: task_001
+    description: left_to_right_with_upper_or_lower_route
+    start: [1.0, 4.0, 0.0]
+    goal: [9.0, 4.0, 0.0]
+
+  - id: task_002
+    description: right_to_left_with_upper_or_lower_route
+    start: [9.0, 4.0, 3.141592653589793]
+    goal: [1.0, 4.0, 3.141592653589793]

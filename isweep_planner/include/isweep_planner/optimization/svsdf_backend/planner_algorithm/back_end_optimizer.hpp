@@ -1137,7 +1137,9 @@ public:
     {
         TrajOptimizer &obj = *(TrajOptimizer *)instance;
         obj.iter++;
-        std::cout << "iter = " << obj.iter << std::endl;
+        if (obj.conf.full_svsdf_verbose >= 4) {
+            std::cout << "iter = " << obj.iter << std::endl;
+        }
         if (obj.conf.enableearlyExit)
         {
             obj.drawDebug();
@@ -1169,7 +1171,9 @@ public:
     {
         TrajOptimizer &obj = *(TrajOptimizer *)instance;
         obj.iter++;
-        std::cout << "iter = " << obj.iter << " step = " << step << std::endl;
+        if (obj.conf.full_svsdf_verbose >= 4) {
+            std::cout << "iter = " << obj.iter << " step = " << step << std::endl;
+        }
         if (obj.conf.enableearlyExit)
         {
             obj.drawDebug();
@@ -1192,9 +1196,6 @@ public:
 public:
     typedef shared_ptr<TrajOptimizer> Ptr;
 };
-
-
-
 
 
 

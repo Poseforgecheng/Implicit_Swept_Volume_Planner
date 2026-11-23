@@ -1,6 +1,7 @@
 #include "isweep_planner/optimization/backend/se2_svsdf_solver.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 #include <ros/package.h>
@@ -70,12 +71,16 @@ Config Se2SvsdfSolver::BuildDefaultConfig() const {
   config.thetamax = 6.0;
   config.rho = 2.2;
   config.rho_mid_end = 1.5;
-  config.inittime = 0.9;
+  config.inittime = 0.25;
   config.mem_size = 16;
   config.past = 64;
   config.min_step = 1.0e-32;
   config.g_epsilon = 0.0;
   config.RelCostTol = 1.0e-8;
+  config.full_svsdf_max_iterations = 600;
+  config.full_svsdf_max_evaluations = 1800;
+  config.full_svsdf_timeout_sec = 1.5;
+  config.full_svsdf_verbose = -1;
   config.vehicleMass = 0.61;
   config.gravAcc = 9.8;
   config.horizDrag = 0.10;
@@ -139,14 +144,28 @@ void Se2SvsdfSolver::LoadConfigOverrides(ros::NodeHandle& pnh) {
   pnh.param("parasDrag", config_.parasDrag, config_.parasDrag);
   pnh.param("speedEps", config_.speedEps, config_.speedEps);
   pnh.param("front_end_safeh", config_.front_end_safeh, config_.front_end_safeh);
+  pnh.param("full_svsdf/max_iterations", config_.full_svsdf_max_iterations,
+            config_.full_svsdf_max_iterations);
+  pnh.param("full_svsdf/max_evaluations", config_.full_svsdf_max_evaluations,
+            config_.full_svsdf_max_evaluations);
+  pnh.param("full_svsdf/timeout_sec", config_.full_svsdf_timeout_sec,
+            config_.full_svsdf_timeout_sec);
+  pnh.param("full_svsdf/verbose", config_.full_svsdf_verbose,
+            config_.full_svsdf_verbose);
 }
 
 void Se2SvsdfSolver::Initialize(ros::NodeHandle& nh, ros::NodeHandle& pnh,
                                 const FootprintModel& footprint) {
-  (void)footprint;
   nh_.reset(new ros::NodeHandle(nh));
   config_ = BuildDefaultConfig();
   LoadConfigOverrides(pnh);
+  // Obstacle candidates must cover the complete footprint, not merely the
+  // robot center kernel.  The previous kernel/3 query missed walls touched by
+  // long or non-convex robots, especially on two-state corner segments.
+  footprint_query_radius_ = std::max(
+      footprint.circumscribedRadius() + config_.safety_hor +
+          config_.occupancy_resolution,
+      0.5 * config_.kernel_size * config_.occupancy_resolution);
   ConfigureModules(true);
 }
 
@@ -272,9 +291,13 @@ bool Se2SvsdfSolver::BuildSupportData(
     double yaw1 = segment[i+1].yaw;
     double yaw_diff = std::abs(normalizeAngle(yaw1 - yaw0));
     
-    // Allocate time based on linear distance (max ~1.0m/s) and angular distance (max ~0.5rad/s)
+    // Allocate time from both translation and rotation.  The former fixed
+    // 0.5 rad/s assumption made dense corner chains unnecessarily slow even
+    // when the configured angular limit was much larger.
     double time_for_dist = dist / 1.0;
-    double time_for_yaw = yaw_diff / 0.5;
+    const double nominal_yaw_rate =
+        std::max(0.5, std::min(1.0, 0.8 * config_.omgmax));
+    double time_for_yaw = yaw_diff / nominal_yaw_rate;
     
     (*initial_times)(i) = std::max({config_.inittime, time_for_dist, time_for_yaw});
   }
@@ -319,7 +342,10 @@ Trajectory Se2SvsdfSolver::ConvertTrajectory(
 }
 
 bool Se2SvsdfSolver::Solve(const std::vector<SE2State>& segment,
-                           Trajectory* trajectory, bool preserve_shape) {
+                           Trajectory* trajectory, bool preserve_shape,
+                           bool force_full_svsdf) {
+  last_solve_diagnostics_ = SolveDiagnostics();
+  last_solve_diagnostics_.strict_called = true;
   if (!ready_ || trajectory == nullptr) {
     return false;
   }
@@ -345,21 +371,53 @@ bool Se2SvsdfSolver::Solve(const std::vector<SE2State>& segment,
   if (!mid_ok) {
     return false;
   }
+  last_solve_diagnostics_.midend_success = true;
 
-  if (preserve_shape) {
+  if (preserve_shape && !force_full_svsdf) {
+    last_solve_diagnostics_.preserve_shape_bypass = true;
     *trajectory = ConvertTrajectory(strict_traj);
     return !trajectory->empty();
   }
 
+  last_solve_diagnostics_.full_svsdf_used = true;
+  const std::chrono::steady_clock::time_point full_svsdf_start =
+      std::chrono::steady_clock::now();
   swept_volume_manager_->updateTraj(strict_traj);
   backend_->pcsmap_manager->aabb_points.clear();
-  Eigen::Vector3d last_point(999.0, 999.0, 999.0);
-  for (size_t i = 0; i < points.size(); ++i) {
-    backend_->pcsmap_manager->getPointsInAABBOutOfLastOne(
-        points[i], last_point, config_.kernel_size * config_.occupancy_resolution / 3.0,
-        config_.kernel_size * config_.occupancy_resolution / 3.0,
-        config_.kernel_size * config_.occupancy_resolution / 3.0);
-    last_point = points[i];
+  const double xy_query_half_extent = std::max(
+      footprint_query_radius_, config_.kernel_size * config_.occupancy_resolution / 3.0);
+  const double z_query_half_extent =
+      std::max(config_.occupancy_resolution,
+               0.5 * config_.kernel_size * config_.occupancy_resolution);
+  const double center_step = std::max(
+      config_.occupancy_resolution, 0.5 * std::max(footprint_query_radius_,
+                                                   config_.occupancy_resolution));
+
+  // Query along the complete waypoint chain, including both endpoints.  HIGH
+  // runs frequently contain only two states; querying only `points` (the
+  // interior MINCO supports) left those segments with zero obstacle samples.
+  for (size_t edge = 0; edge + 1 < segment.size(); ++edge) {
+    const Eigen::Vector2d p0 = segment[edge].position();
+    const Eigen::Vector2d p1 = segment[edge + 1].position();
+    const int samples = std::max(
+        1, static_cast<int>(std::ceil((p1 - p0).norm() / center_step)));
+    for (int sample = 0; sample <= samples; ++sample) {
+      const double ratio = static_cast<double>(sample) /
+                           static_cast<double>(samples);
+      const Eigen::Vector2d position = p0 + ratio * (p1 - p0);
+      const Eigen::Vector3d center(position.x(), position.y(), 0.0);
+      std::vector<Eigen::Vector3d> local_points;
+      backend_->pcsmap_manager->getPointsInAABB(
+          center, xy_query_half_extent, xy_query_half_extent,
+          z_query_half_extent, local_points);
+      for (const Eigen::Vector3d& point : local_points) {
+        const Eigen::Vector3i index =
+            backend_->pcsmap_manager->occupancy_map->getGridIndex(point);
+        backend_->pcsmap_manager->aabb_points.emplace(
+            backend_->pcsmap_manager->unifiedID(index.x(), index.y(), index.z()),
+            point);
+      }
+    }
   }
   backend_->parallel_points.clear();
   for (std::unordered_map<int, Eigen::Vector3d>::const_iterator it =
@@ -369,13 +427,30 @@ bool Se2SvsdfSolver::Solve(const std::vector<SE2State>& segment,
   }
   backend_->parallel_points_num =
       static_cast<int>(backend_->parallel_points.size());
+  last_solve_diagnostics_.obstacle_point_count = backend_->parallel_points_num;
   backend_->lastTstar.assign(backend_->parallel_points.size(), 0.0);
+
+  if (backend_->parallel_points.empty()) {
+    // The complete footprint-sized query found no nearby obstacle.  Running a
+    // nonsmooth optimizer with an empty swept-volume penalty cannot improve
+    // the mid-end trajectory and previously wasted thousands of iterations.
+    last_solve_diagnostics_.full_svsdf_elapsed_ms =
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - full_svsdf_start).count();
+    last_solve_diagnostics_.full_svsdf_success = true;
+    *trajectory = ConvertTrajectory(strict_traj);
+    return !trajectory->empty();
+  }
 
   const int ret = backend_->optimize_traj_lmbm(init_state, final_state, opt_x,
                                                piece_count, strict_traj);
+  last_solve_diagnostics_.full_svsdf_elapsed_ms =
+      std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - full_svsdf_start).count();
   if (ret <= 0) {
     return false;
   }
+  last_solve_diagnostics_.full_svsdf_success = true;
 
   *trajectory = ConvertTrajectory(strict_traj);
   return !trajectory->empty();

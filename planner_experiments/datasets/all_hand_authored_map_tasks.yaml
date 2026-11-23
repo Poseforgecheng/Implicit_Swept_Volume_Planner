@@ -1,0 +1,42 @@
+schema_version: 1
+
+# One explicit long_rectangle task source for every map currently shipped in
+# planner_experiments/maps.  Each task file contains two hand-authored key
+# crossings.  Methods and planning seeds are selected by experiment config/CLI.
+datasets:
+  - id: bench_dual_route_long_rectangle
+    tasks: ../tasks/bench_dual_route.yaml
+    metadata:
+      task_source: hand_authored_key_tasks
+  - id: bench_l_corner_180_long_rectangle
+    tasks: ../tasks/bench_l_corner_180.yaml
+    metadata:
+      task_source: hand_authored_key_tasks
+  - id: bench_narrow_door_180_long_rectangle
+    tasks: ../tasks/bench_narrow_door_180.yaml
+    metadata:
+      task_source: hand_authored_key_tasks
+  - id: bench_random_obstacles_seed1_long_rectangle
+    tasks: ../tasks/bench_random_obstacles_seed1.yaml
+    metadata:
+      task_source: hand_authored_key_tasks
+  - id: bench_rotation_channel_180_long_rectangle
+    tasks: ../tasks/bench_rotation_channel_180.yaml
+    metadata:
+      task_source: hand_authored_key_tasks
+  - id: bench_s_channel_180_long_rectangle
+    tasks: ../tasks/bench_s_channel_180.yaml
+    metadata:
+      task_source: hand_authored_key_tasks
+  - id: ditu_long_rectangle
+    tasks: ../tasks/ditu.yaml
+    metadata:
+      task_source: hand_authored_key_tasks
+  - id: smoke_empty_long_rectangle
+    tasks: ../tasks/smoke_empty.yaml
+    metadata:
+      task_source: hand_authored_key_tasks
+  - id: smoke_empty_005_long_rectangle
+    tasks: ../tasks/smoke_empty_005.yaml
+    metadata:
+      task_source: hand_authored_key_tasks

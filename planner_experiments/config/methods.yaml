@@ -1,0 +1,151 @@
+methods:
+  current_full:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery: &full_recovery
+      enabled: true
+      local_upgrade: true
+      strict_local_patch: true
+      swept_astar: true
+      hybrid_astar: true
+      candidate_switch: true
+      tail_refinement: true
+      hybrid_frontend_fallback: true
+      post_incumbent_svsdf_budget: 4
+      tail_refinement_svsdf_budget: 1
+
+  # Pure local-recovery ablation: candidate switching, optional tail quality
+  # refinement, and the prepared Hybrid-A* front-end fallback remain identical
+  # to current_full. Only guarded local escalation/search patches are disabled.
+  current_no_local_recovery:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery:
+      enabled: true
+      local_upgrade: false
+      strict_local_patch: false
+      swept_astar: false
+      hybrid_astar: false
+      candidate_switch: true
+      tail_refinement: true
+      hybrid_frontend_fallback: true
+      post_incumbent_svsdf_budget: 4
+      tail_refinement_svsdf_budget: 1
+
+  current_no_recovery:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery:
+      enabled: false
+      local_upgrade: false
+      strict_local_patch: false
+      swept_astar: false
+      hybrid_astar: false
+      candidate_switch: false
+      tail_refinement: false
+      # The original Hybrid A* front-end fallback is explicitly retained.
+      hybrid_frontend_fallback: true
+
+  full_r2:
+    force_all_low: true
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery:
+      enabled: false
+      local_upgrade: false
+      strict_local_patch: false
+      swept_astar: false
+      hybrid_astar: false
+      candidate_switch: false
+      tail_refinement: false
+      hybrid_frontend_fallback: false
+
+  full_strict:
+    force_all_low: false
+    force_all_strict: true
+    force_full_svsdf: true
+    hybrid_astar_only: false
+    # Match current_full's scheduler/recovery controls so the only ablated
+    # variable is the optimizer level: every original segment is HIGH and
+    # every strict call must enter the complete SVSDF backend.
+    recovery: *full_recovery
+
+  hybrid_astar:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: true
+    recovery:
+      enabled: false
+      local_upgrade: false
+      strict_local_patch: false
+      swept_astar: false
+      hybrid_astar: false
+      candidate_switch: false
+      tail_refinement: false
+      hybrid_frontend_fallback: true
+
+  no_recovery:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery: {enabled: false, local_upgrade: false, strict_local_patch: false, swept_astar: false, hybrid_astar: false, candidate_switch: false, tail_refinement: false, hybrid_frontend_fallback: true}
+
+  candidate_switch_only:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery: {enabled: true, local_upgrade: false, strict_local_patch: false, swept_astar: false, hybrid_astar: false, candidate_switch: true, tail_refinement: false, hybrid_frontend_fallback: true}
+
+  local_upgrade_only:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery: {enabled: true, local_upgrade: true, strict_local_patch: false, swept_astar: false, hybrid_astar: false, candidate_switch: false, tail_refinement: false, hybrid_frontend_fallback: true}
+
+  swept_astar_only:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery: {enabled: true, local_upgrade: false, strict_local_patch: false, swept_astar: true, hybrid_astar: false, candidate_switch: false, tail_refinement: false, hybrid_frontend_fallback: true}
+
+  hybrid_astar_only:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery: {enabled: true, local_upgrade: false, strict_local_patch: false, swept_astar: false, hybrid_astar: true, candidate_switch: false, tail_refinement: false, hybrid_frontend_fallback: true}
+
+  local_upgrade_and_candidate_switch:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery: {enabled: true, local_upgrade: true, strict_local_patch: false, swept_astar: false, hybrid_astar: false, candidate_switch: true, tail_refinement: false, hybrid_frontend_fallback: true}
+
+  full_recovery:
+    force_all_low: false
+    force_all_strict: false
+    force_full_svsdf: false
+    hybrid_astar_only: false
+    recovery: *full_recovery
+
+recovery_presets:
+  no_recovery: {enabled: false, local_upgrade: false, strict_local_patch: false, swept_astar: false, hybrid_astar: false, candidate_switch: false}
+  candidate_switch_only: {enabled: true, local_upgrade: false, strict_local_patch: false, swept_astar: false, hybrid_astar: false, candidate_switch: true}
+  local_upgrade_only: {enabled: true, local_upgrade: true, strict_local_patch: false, swept_astar: false, hybrid_astar: false, candidate_switch: false}
+  swept_astar_only: {enabled: true, local_upgrade: false, strict_local_patch: false, swept_astar: true, hybrid_astar: false, candidate_switch: false}
+  hybrid_astar_only: {enabled: true, local_upgrade: false, strict_local_patch: false, swept_astar: false, hybrid_astar: true, candidate_switch: false}
+  local_upgrade_and_candidate_switch: {enabled: true, local_upgrade: true, strict_local_patch: false, swept_astar: false, hybrid_astar: false, candidate_switch: true}
+  full_recovery: *full_recovery

@@ -133,6 +133,18 @@ double ApproximateTrajectoryLength(const Trajectory& traj) {
   return length;
 }
 
+double LocalTrajectoryReuseRatio(double original_length,
+                                 double replanned_length) {
+  if (!std::isfinite(original_length) || original_length <= 1e-9 ||
+      !std::isfinite(replanned_length) || replanned_length < 0.0) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  return std::max(
+      0.0,
+      std::min(1.0, 1.0 - std::min(original_length, replanned_length) /
+                             original_length));
+}
+
 double TrajectorySmoothnessCost(const Trajectory& traj) {
   if (traj.empty()) {
     return kInf;

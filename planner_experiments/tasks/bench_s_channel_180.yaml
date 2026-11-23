@@ -1,0 +1,22 @@
+map: bench_s_channel_180
+map_yaml: ../maps/bench_s_channel_180/map.yaml
+robot_shape: long_rectangle
+robot_yaml: ../config/robot_shapes/long_rectangle.yaml
+
+generation:
+  type: hand_authored_key_tasks
+  scenario: alternating_top_bottom_passages
+  coordinate_units: metres
+  angle_units: radians
+  endpoint_validation_step_m: 0.01
+
+tasks:
+  - id: task_001
+    description: left_to_right_through_top_then_bottom_passage
+    start: [1.0, 4.0, 0.0]
+    goal: [9.0, 4.0, 0.0]
+
+  - id: task_002
+    description: right_to_left_through_bottom_then_top_passage
+    start: [9.0, 4.0, 3.141592653589793]
+    goal: [1.0, 4.0, 3.141592653589793]

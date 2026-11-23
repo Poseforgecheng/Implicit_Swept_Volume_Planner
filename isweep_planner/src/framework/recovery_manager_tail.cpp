@@ -89,7 +89,7 @@ void RecoveryManager::MaybeImproveTailTrajectory(
 
   auto maybe_accept_suffix =
       [&](size_t start_index, const std::vector<SE2State>& suffix_waypoints,
-          bool use_strict, const char* label) {
+          RiskLevel level, const char* label) {
         if (suffix_waypoints.size() < 2 || stop_after_accept || tail_timed_out() ||
             tail_attempts >= max_tail_attempts ||
             consecutive_no_improvement >= max_consecutive_no_improvement) {
@@ -97,11 +97,21 @@ void RecoveryManager::MaybeImproveTailTrajectory(
         }
 
         ++tail_attempts;
+        level = EffectiveSolverLevel(runtime_->experiment_options_, level);
         Trajectory suffix_traj;
         const double seg_time = runtime_->EstimateSegmentTime(suffix_waypoints);
-        const bool solved =
-            use_strict ? runtime_->SolveStrictSegment(suffix_waypoints, &suffix_traj)
-                       : runtime_->OptimizeLowRiskSegment(suffix_waypoints, seg_time, &suffix_traj);
+        bool solved = false;
+        if (level == RiskLevel::LOW) {
+          solved = runtime_->OptimizeLowRiskSegment(suffix_waypoints, seg_time,
+                                                    &suffix_traj);
+        } else if (level == RiskLevel::MEDIUM) {
+          solved = runtime_->OptimizeMediumRiskSegment(
+              suffix_waypoints, seg_time, &suffix_traj);
+        } else {
+          solved = runtime_->SolveStrictSegment(suffix_waypoints, &suffix_traj,
+                                                true, true,
+                                                FullSvsdfCallSource::TAIL_REFINEMENT);
+        }
         if (!solved || suffix_traj.empty()) {
           record_no_improvement();
           return;
@@ -137,6 +147,18 @@ void RecoveryManager::MaybeImproveTailTrajectory(
           record_no_improvement();
           return;
         }
+        ++runtime_->experiment_telemetry_.external_equivalent_gate_attempt_count;
+        double footprint_clearance = -kInf;
+        std::string footprint_failure;
+        if (!runtime_->PassesExternalEquivalentFootprintGate(
+                candidate_traj, &footprint_clearance, &footprint_failure)) {
+          ++runtime_->experiment_telemetry_.external_equivalent_gate_reject_count;
+          ROS_INFO("Tail refinement rejected by external-equivalent gate: %s",
+                   footprint_failure.c_str());
+          record_no_improvement();
+          return;
+        }
+        min_clearance = std::min(min_clearance, footprint_clearance);
 
         const double candidate_length = ApproximateTrajectoryLength(candidate_traj);
         const size_t candidate_pieces = candidate_traj.pos_pieces.size();
@@ -154,11 +176,6 @@ void RecoveryManager::MaybeImproveTailTrajectory(
         const double previous_best_clearance = best.min_clearance;
         const size_t previous_best_pieces = best.trajectory.pos_pieces.size();
         const double previous_best_length = best_length;
-        int prefix_support_points = 0;
-        for (size_t i = 0; i < start_index; ++i) {
-          prefix_support_points += static_cast<int>(segments[i].waypoints.size());
-        }
-
         ROS_INFO(
             "Tail refinement accepted from seg %zu via %s: pieces %zu -> %zu, length %.3f -> %.3f, clearance %.3f -> %.3f",
             start_index, label, previous_best_pieces, candidate_pieces,
@@ -169,10 +186,35 @@ void RecoveryManager::MaybeImproveTailTrajectory(
         best.min_clearance = min_clearance;
         best.max_vel = max_vel;
         best.max_acc = max_acc;
-        best.support_points =
-            prefix_support_points + static_cast<int>(suffix_waypoints.size());
-        best.high_risk_segments =
-            CountHighRiskSegments(segments, start_index) + (use_strict ? 1 : 0);
+        // Geometry changed after the incumbent's full external-equivalent
+        // gate. The caller must re-run dynamics, continuity and requested
+        // endpoint validation before this tail can replace the incumbent.
+        best.external_equivalent_gate_passed = false;
+        best.segments.assign(segments.begin(), segments.begin() + start_index);
+        best.segment_trajectories.assign(segment_trajectories.begin(),
+                                         segment_trajectories.begin() +
+                                             start_index);
+        MotionSegment suffix_segment;
+        suffix_segment.risk = level;
+        suffix_segment.waypoints = suffix_waypoints;
+        for (size_t i = start_index; i < segments.size(); ++i) {
+          suffix_segment.max_risk_score =
+              std::max(suffix_segment.max_risk_score,
+                       segments[i].max_risk_score);
+        }
+        suffix_segment.mean_risk_score = suffix_segment.max_risk_score;
+        best.segments.push_back(suffix_segment);
+        best.segment_trajectories.push_back(suffix_traj);
+        best.support_points = CountSupportPoints(best.segments);
+        best.high_risk_segments = 0;
+        best.medium_risk_segments = 0;
+        for (const MotionSegment& segment : best.segments) {
+          if (segment.risk == RiskLevel::HIGH) {
+            ++best.high_risk_segments;
+          } else if (segment.risk == RiskLevel::MEDIUM) {
+            ++best.medium_risk_segments;
+          }
+        }
         best_length = candidate_length;
         improved = true;
         consecutive_no_improvement = 0;
@@ -197,18 +239,21 @@ void RecoveryManager::MaybeImproveTailTrajectory(
 
     std::vector<SE2State> merged_suffix;
     merged_suffix.reserve(segments[start_index].waypoints.size());
-    bool suffix_has_high = false;
+    RiskLevel suffix_level = RiskLevel::LOW;
     for (size_t i = start_index; i < segment_count; ++i) {
-      suffix_has_high = suffix_has_high || segments[i].risk == RiskLevel::HIGH;
+      if (RiskLevelRank(segments[i].risk) > RiskLevelRank(suffix_level)) {
+        suffix_level = segments[i].risk;
+      }
       AppendUniqueWaypoints(segments[i].waypoints, &merged_suffix);
     }
 
     if (merged_suffix.size() >= 2) {
-      maybe_accept_suffix(start_index, merged_suffix, false, "merged_suffix_r2");
-      if (suffix_has_high && !stop_after_accept &&
-          consecutive_no_improvement < max_consecutive_no_improvement) {
-        maybe_accept_suffix(start_index, merged_suffix, true, "merged_suffix_strict");
-      }
+      maybe_accept_suffix(start_index, merged_suffix, suffix_level,
+                          suffix_level == RiskLevel::LOW
+                              ? "merged_suffix_r2"
+                              : (suffix_level == RiskLevel::MEDIUM
+                                     ? "merged_suffix_se2"
+                                     : "merged_suffix_svsdf"));
     }
 
     if (start_index == first_suffix_index) {

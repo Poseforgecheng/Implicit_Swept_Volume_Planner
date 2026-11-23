@@ -1,0 +1,164 @@
+<launch>
+  <!-- IR-SIM is the only plant/collision-truth source. RViz is visualization only. -->
+  <arg name="map_file" default="$(find isweep_planner)/maps/map.yaml" />
+  <arg name="irsim_python" default="$(find irsim_bridge)/.venv/bin/python3" />
+  <arg name="rviz" default="true" />
+  <arg name="display_irsim" default="false" />
+  <arg name="unknown_is_occupied" default="true" />
+  <arg name="seed" default="7" />
+  <arg name="step_time" default="0.10" />
+  <arg name="planner_method" default="current_full" />
+  <arg name="hybrid_max_expansions" default="300000" />
+  <arg name="hybrid_fast_pass_max_expansions" default="30000" />
+  <arg name="hybrid_steer_samples" default="7" />
+  <arg name="hybrid_heuristic_weight" default="2.0" />
+
+  <arg name="start_x" default="1.0" />
+  <arg name="start_y" default="1.0" />
+  <arg name="start_yaw" default="0.0" />
+  <arg name="goal_x" default="9.0" />
+  <arg name="goal_y" default="9.0" />
+  <arg name="goal_yaw" default="1.57079632679" />
+
+  <arg name="robot_length" default="0.45" />
+  <arg name="robot_width" default="0.36" />
+  <arg name="wheelbase" default="0.30" />
+  <arg name="max_linear_speed" default="0.45" />
+  <arg name="max_yaw_rate" default="1.0" />
+  <arg name="min_turn_radius" default="0.30" />
+  <arg name="goal_position_tolerance" default="0.10" />
+  <arg name="goal_yaw_tolerance" default="0.20" />
+  <arg name="lidar_beams" default="72" />
+
+  <param name="use_sim_time" value="false" />
+
+  <node pkg="irsim_bridge"
+        type="irsim_ros_bridge.py"
+        name="irsim_bridge"
+        output="screen"
+        required="true"
+        launch-prefix="$(arg irsim_python)">
+    <param name="map_yaml" value="$(arg map_file)" />
+    <param name="unknown_is_occupied" value="$(arg unknown_is_occupied)" />
+    <param name="display_irsim" value="$(arg display_irsim)" />
+    <param name="irsim_log_level" value="ERROR" />
+    <param name="seed" value="$(arg seed)" />
+    <param name="planner_method" value="$(arg planner_method)" />
+    <param name="step_time" value="$(arg step_time)" />
+    <param name="frame_id" value="map" />
+    <param name="base_frame" value="base_link" />
+    <param name="scan_frame" value="base_scan" />
+    <param name="map_topic" value="/prior_map" />
+    <param name="cmd_topic" value="/irsim/cmd_vel" />
+    <param name="odom_topic" value="/irsim/odom" />
+    <param name="localization_topic" value="/irsim/localization" />
+    <param name="scan_topic" value="/irsim/scan" />
+    <param name="current_pose_topic" value="/irsim/current_pose_raw" />
+    <param name="current_velocity_topic" value="/irsim/current_velocity_raw" />
+    <param name="accept_rviz_start" value="true" />
+    <param name="command_timeout" value="0.50" />
+    <param name="start/x" value="$(arg start_x)" />
+    <param name="start/y" value="$(arg start_y)" />
+    <param name="start/yaw" value="$(arg start_yaw)" />
+    <param name="goal/x" value="$(arg goal_x)" />
+    <param name="goal/y" value="$(arg goal_y)" />
+    <param name="goal/yaw" value="$(arg goal_yaw)" />
+    <param name="goal_position_tolerance" value="$(arg goal_position_tolerance)" />
+    <param name="goal_yaw_tolerance" value="$(arg goal_yaw_tolerance)" />
+    <param name="robot/length" value="$(arg robot_length)" />
+    <param name="robot/width" value="$(arg robot_width)" />
+    <param name="robot/wheelbase" value="$(arg wheelbase)" />
+    <param name="robot/max_linear_speed" value="$(arg max_linear_speed)" />
+    <param name="robot/max_yaw_rate" value="$(arg max_yaw_rate)" />
+    <param name="robot/min_turn_radius" value="$(arg min_turn_radius)" />
+    <param name="robot/linear_acceleration" value="0.50" />
+    <param name="robot/max_steering_rate" value="1.0" />
+    <param name="lidar/range_min" value="0.05" />
+    <param name="lidar/range_max" value="8.0" />
+    <param name="lidar/angle_range" value="6.28318" />
+    <param name="lidar/beams" value="$(arg lidar_beams)" />
+    <param name="lidar/noise" value="false" />
+  </node>
+
+  <!-- Reuse the real-robot start/goal/replan contract. -->
+  <node pkg="navigation_adapter"
+        type="navigation_adapter_node"
+        name="irsim_navigation_adapter"
+        output="screen"
+        required="true">
+    <param name="map_in_topic" value="/prior_map" />
+    <param name="map_out_topic" value="/isweep_planner/map" />
+    <param name="localization_topic" value="/irsim/localization" />
+    <param name="odom_topic" value="/irsim/odom" />
+    <param name="goal_in_topic" value="/move_base_simple/goal" />
+    <param name="planner_start_topic" value="/isweep_planner/initialpose" />
+    <param name="planner_goal_topic" value="/isweep_planner/goal" />
+    <param name="current_pose_topic" value="/isweep_planner/current_pose" />
+    <param name="current_velocity_topic" value="/isweep_planner/current_velocity" />
+    <param name="replan_topic" value="/isweep_planner/replan_request" />
+    <param name="auto_start_from_localization" value="true" />
+    <param name="replan_on_request" value="true" />
+    <param name="replan_request_min_interval" value="1.0" />
+  </node>
+
+  <node name="isweep_planner"
+        pkg="isweep_planner"
+        type="isweep_planner_node"
+        output="screen"
+        required="true">
+    <rosparam file="$(find isweep_planner)/config/planner.yaml" command="load" />
+    <rosparam file="$(find isweep_planner)/config/planner_v3_ackermann.yaml" command="load" />
+    <param name="use_start_goal_params" value="false" />
+    <param name="planner_method" value="$(arg planner_method)" />
+    <param name="startup_wait_for_map" value="true" />
+    <param name="startup_map_wait_timeout" value="30.0" />
+    <param name="replan_on_map_update" value="false" />
+    <param name="run_local_planner" value="true" />
+    <!-- IR-SIM and ROS use positive counter-clockwise yaw. -->
+    <param name="local_planner/cmd_linear_sign" value="1.0" />
+    <param name="local_planner/cmd_angular_sign" value="1.0" />
+    <param name="local_planner/update_rate" value="10.0" />
+    <param name="local_planner/terminal_pose_control_enabled" value="true" />
+    <param name="local_planner/terminal_min_turn_radius" value="$(arg min_turn_radius)" />
+    <param name="local_planner/terminal_position_tolerance"
+           value="$(arg goal_position_tolerance)" />
+    <param name="local_planner/terminal_yaw_tolerance"
+           value="$(arg goal_yaw_tolerance)" />
+    <param name="hybrid_astar/wheel_base" value="$(arg wheelbase)" />
+    <param name="hybrid_astar/max_expansions"
+           value="$(arg hybrid_max_expansions)" />
+    <param name="hybrid_astar/fast_pass_max_expansions"
+           value="$(arg hybrid_fast_pass_max_expansions)" />
+    <param name="hybrid_astar/steer_samples"
+           value="$(arg hybrid_steer_samples)" />
+    <param name="hybrid_astar/heuristic_weight"
+           value="$(arg hybrid_heuristic_weight)" />
+    <param name="vmax" value="$(arg max_linear_speed)" />
+    <param name="optimizer/max_vel" value="$(arg max_linear_speed)" />
+    <param name="optimizer/max_yaw_rate" value="$(arg max_yaw_rate)" />
+    <remap from="/map" to="/isweep_planner/map" />
+    <remap from="/initialpose" to="/isweep_planner/initialpose" />
+    <remap from="/move_base_simple/goal" to="/isweep_planner/goal" />
+  </node>
+
+  <!-- Reuse the real-robot Ackermann gate, but isolate its output from /cmd_vel. -->
+  <node pkg="planner_bridge"
+        type="planner_bridge_node"
+        name="irsim_ackermann_command_gate"
+        output="screen">
+    <param name="local_cmd_topic" value="/isweep_planner/local_cmd" />
+    <param name="cmd_vel_out_topic" value="/irsim/cmd_vel" />
+    <param name="enable_cmd_output" value="true" />
+    <param name="publish_zero_when_disabled" value="true" />
+    <param name="ackermann_mode" value="true" />
+    <param name="ackermann_min_turn_linear_speed" value="0.08" />
+    <param name="ackermann_min_turn_radius" value="$(arg min_turn_radius)" />
+  </node>
+
+  <node if="$(arg rviz)"
+        pkg="rviz"
+        type="rviz"
+        name="irsim_isweep_rviz"
+        args="-d $(find irsim_bridge)/config/isweep_irsim.rviz"
+        output="screen" />
+</launch>

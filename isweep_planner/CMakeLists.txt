@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(catkin REQUIRED COMPONENTS
+  message_generation
   geometry_msgs
   nav_msgs
   pcl_conversions
@@ -18,6 +19,17 @@ find_package(catkin REQUIRED COMPONENTS
   visualization_msgs
 )
 
+add_message_files(
+  FILES
+  GlobalReferencePoint.msg
+  RiskAwareGlobalReference.msg
+)
+
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
+
 find_package(Eigen3 REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(PCL REQUIRED)
@@ -26,7 +38,7 @@ file(GLOB ISWEEP_PLANNER_IGL_LIBS "${CMAKE_CURRENT_SOURCE_DIR}/lib/*.a")
 
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS geometry_msgs nav_msgs pcl_conversions roscpp roslib sensor_msgs std_msgs tf2 tf2_ros visualization_msgs
+  CATKIN_DEPENDS geometry_msgs message_runtime nav_msgs pcl_conversions roscpp roslib sensor_msgs std_msgs tf2 tf2_ros visualization_msgs
   DEPENDS EIGEN3 PCL
 )
 
@@ -86,15 +98,19 @@ set(ISWEEP_PLANNER_SOURCES
   src/optimization/svsdf_backend/svsdf_backend_optimizer.cpp
   src/optimization/svsdf_backend/debug_publisher.cpp
   src/core/trajectory_utils.cpp
+  src/core/trajectory_footprint_validator.cpp
   src/core/math_utils.cpp
+  src/local_planner/risk_aware_local_planner.cpp
   src/framework/svsdf_runtime.cpp
   src/framework/svsdf_runtime_plan.cpp
   src/framework/svsdf_runtime_evaluate.cpp
+  src/framework/svsdf_runtime_reference.cpp
   src/framework/recovery_manager_tail.cpp
   src/framework/recovery_manager_bottleneck.cpp
 )
 
 add_library(isweep_planner_core STATIC ${ISWEEP_PLANNER_SOURCES})
+add_dependencies(isweep_planner_core ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 # Apply hardware acceleration ONLY to our source files
 target_compile_options(isweep_planner_core PRIVATE ${ISWEEP_HARDWARE_FLAGS})
 
@@ -108,6 +124,7 @@ target_link_libraries(isweep_planner_core
 )
 
 add_executable(isweep_planner_node src/ros_interface/isweep_planner_node.cpp)
+add_dependencies(isweep_planner_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(isweep_planner_node
   isweep_planner_core
   ${catkin_LIBRARIES}
@@ -115,3 +132,14 @@ target_link_libraries(isweep_planner_node
   ${PCL_LIBRARIES}
 )
 
+if(CATKIN_ENABLE_TESTING)
+  catkin_add_gtest(test_planning_contracts test/test_planning_contracts.cpp)
+  if(TARGET test_planning_contracts)
+    target_link_libraries(test_planning_contracts
+      isweep_planner_core
+      ${catkin_LIBRARIES}
+      ${EIGEN3_LIBRARIES}
+      ${PCL_LIBRARIES}
+    )
+  endif()
+endif()

@@ -1,0 +1,10 @@
+name: l_shape
+footprint:
+  - [-0.50, -0.40]
+  - [ 0.50, -0.40]
+  - [ 0.50, -0.10]
+  - [ 0.10, -0.10]
+  - [ 0.10,  0.50]
+  - [-0.50,  0.50]
+mesh_path: package://planner_experiments/meshes/l_shape.obj
+safety_margin: 0.0

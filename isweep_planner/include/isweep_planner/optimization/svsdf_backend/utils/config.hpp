@@ -63,6 +63,13 @@ public:
     double g_epsilon{0.0};
     double RelCostTol{1e-5}; 
 
+    // Bounded full-SVSDF/LMBM solve.  These limits are deliberately separate
+    // from the lightweight R2/SE2 optimizer iteration limit.
+    int full_svsdf_max_iterations{600};
+    int full_svsdf_max_evaluations{1800};
+    double full_svsdf_timeout_sec{1.5};
+    int full_svsdf_verbose{-1};
+
     //flatness
     double vehicleMass;
     double gravAcc;

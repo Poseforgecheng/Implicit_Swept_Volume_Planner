@@ -244,8 +244,17 @@ public:
     }
     ~SweptVolumeManager()
     {
-        delete current_robot_shape;
-        delete[] map_kernel;
+        // The vendored libigl shape caches are process-lifetime objects in the
+        // planner. Their destructor crosses the prebuilt libigl/Eigen ABI and
+        // currently performs an invalid free at node shutdown. Each runtime
+        // owns exactly one shape and is not reinitialized, so leave it to OS
+        // process teardown; this does not alter planning or experiment values.
+        current_robot_shape = nullptr;
+        // map_kernel is a non-owning view supplied by setMapKernel() from the
+        // PCS map manager's vector storage. Deleting it here is an invalid
+        // free and made short-lived offline experiment processes crash after
+        // successfully writing a result.
+        map_kernel = nullptr;
     }
     typedef shared_ptr<SweptVolumeManager> Ptr;
 

@@ -1,0 +1,9 @@
+validation:
+  time_step_sec: 0.01
+  max_translation_step_m: 0.01
+  max_yaw_step_rad: 0.01
+  footprint_boundary_step_m: 0.01
+  footprint_interior_step_m: 0.02
+  collision_clearance_m: 0.0
+  require_dynamics: true
+  require_boundary_continuity: true

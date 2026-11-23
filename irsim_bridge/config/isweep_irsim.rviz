@@ -1,0 +1,152 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Map1
+        - /Paths1
+    Tree Height: 760
+  - Class: rviz/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.75
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 185; 190; 198
+      Enabled: true
+      Line Style:
+        Line Width: 0.02
+        Value: Lines
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: map
+      Value: true
+    - Alpha: 0.82
+      Class: rviz/Map
+      Color Scheme: map
+      Draw Behind: true
+      Enabled: true
+      Name: Map
+      Topic: /prior_map
+      Unreliable: false
+      Use Timestamp: false
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 120; 126; 138
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.02
+      Name: Candidate Path
+      Pose Style: None
+      Queue Size: 5
+      Topic: /isweep_planner/trajectory_astar
+      Unreliable: false
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 220; 55; 47
+      Enabled: true
+      Line Style: Billboards
+      Line Width: 0.055
+      Name: Planned Trajectory
+      Pose Style: None
+      Queue Size: 5
+      Topic: /isweep_planner/trajectory
+      Unreliable: false
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 48; 156; 190
+      Enabled: true
+      Line Style: Billboards
+      Line Width: 0.04
+      Name: Local Trajectory
+      Pose Style: None
+      Queue Size: 10
+      Topic: /isweep_planner/local_trajectory
+      Unreliable: false
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 35; 165; 78
+      Enabled: true
+      Line Style: Billboards
+      Line Width: 0.05
+      Name: Executed Trajectory
+      Pose Style: None
+      Queue Size: 5
+      Topic: /irsim/actual_path
+      Unreliable: false
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /isweep_planner/markers
+      Name: iSweep Risk and Footprints
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /irsim/markers
+      Name: IR-SIM Robot and Goal
+      Queue Size: 20
+      Value: true
+    - Alpha: 0.65
+      Class: rviz/LaserScan
+      Color: 56; 108; 176
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: false
+      Name: IR-SIM LiDAR
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 2
+      Style: Points
+      Topic: /irsim/scan
+      Unreliable: false
+      Value: false
+  Enabled: true
+  Global Options:
+    Background Color: 250; 250; 250
+    Default Light: true
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+    - Class: rviz/SetInitialPose
+      Theta std deviation: 0.05
+      Topic: /initialpose
+      X std deviation: 0.02
+      Y std deviation: 0.02
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
+  Value: true
+  Views:
+    Current:
+      Angle: 0
+      Class: rviz/TopDownOrtho
+      Name: Current View
+      Near Clip Distance: 0.01
+      Scale: 70
+      Target Frame: map
+      X: 5
+      Y: 5
+    Saved: ~
+Window Geometry:
+  Height: 980
+  Width: 1680
+  X: 40
+  Y: 30

@@ -1,6 +1,7 @@
 #include "isweep_planner/global_search/hybrid_astar.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <queue>
 #include <unordered_map>
@@ -46,6 +47,10 @@ void HybridAStarPlanner::init(const GridMap& map, const CollisionChecker& checke
   map_ = &map;
   checker_ = &checker;
   params_ = params;
+  // keyOf() discretizes by map cell.  A primitive shorter than one cell can
+  // map back to the parent key and be discarded before the search moves.
+  params_.step_size =
+      std::max(params_.step_size, 1.25 * std::max(1e-3, map.resolution()));
 }
 
 bool HybridAStarPlanner::inBoundsAndFree(const SE2State& state) const {
@@ -73,11 +78,24 @@ uint64_t HybridAStarPlanner::keyOf(const SE2State& state) const {
 }
 
 bool HybridAStarPlanner::plan(const SE2State& start, const SE2State& goal,
-                              std::vector<SE2State>& path) {
+                              std::vector<SE2State>& path,
+                              double time_budget_sec,
+                              std::vector<SE2State>* diagnostic_partial) {
   path.clear();
+  if (diagnostic_partial) {
+    diagnostic_partial->clear();
+  }
   if (!map_ || !checker_) {
     return false;
   }
+  const std::chrono::steady_clock::time_point search_start =
+      std::chrono::steady_clock::now();
+  const auto deadline_expired = [&]() {
+    return std::isfinite(time_budget_sec) &&
+           std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                         search_start)
+                   .count() >= std::max(0.0, time_budget_sec);
+  };
 
   SE2State start_search = start;
   SE2State goal_search = goal;
@@ -179,6 +197,73 @@ bool HybridAStarPlanner::plan(const SE2State& start, const SE2State& goal,
     return true;
   };
 
+  // Euclidean distance repeatedly drives the search into dead ends on
+  // serpentine maps. Build a holonomic obstacle-aware distance-to-goal field
+  // once. It guides expansion only; SE(2) primitives and footprint collision
+  // checks remain authoritative for feasibility.
+  const int grid_width = map_->width();
+  const int grid_height = map_->height();
+  std::vector<double> holonomic_distance(
+      static_cast<size_t>(std::max(0, grid_width * grid_height)), kInf);
+  struct GridOpenItem {
+    double distance = kInf;
+    int index = -1;
+    bool operator>(const GridOpenItem& other) const {
+      if (distance != other.distance) return distance > other.distance;
+      return index > other.index;
+    }
+  };
+  std::priority_queue<GridOpenItem, std::vector<GridOpenItem>,
+                      std::greater<GridOpenItem>> grid_open;
+  const GridIndex goal_grid = map_->worldToGrid(goal_search.x, goal_search.y);
+  if (map_->isInside(goal_grid.x, goal_grid.y) &&
+      !map_->isOccupied(goal_grid.x, goal_grid.y)) {
+    const int goal_linear = map_->linearIndex(goal_grid.x, goal_grid.y);
+    holonomic_distance[static_cast<size_t>(goal_linear)] = 0.0;
+    grid_open.push({0.0, goal_linear});
+  }
+  const int neighbor_dx[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+  const int neighbor_dy[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+  while (!grid_open.empty()) {
+    const GridOpenItem item = grid_open.top();
+    grid_open.pop();
+    if (item.index < 0 || item.index >= grid_width * grid_height ||
+        item.distance >
+            holonomic_distance[static_cast<size_t>(item.index)] + 1e-9) {
+      continue;
+    }
+    const int x = item.index % grid_width;
+    const int y = item.index / grid_width;
+    for (int neighbor = 0; neighbor < 8; ++neighbor) {
+      const int nx = x + neighbor_dx[neighbor];
+      const int ny = y + neighbor_dy[neighbor];
+      if (!map_->isInside(nx, ny) || map_->isOccupied(nx, ny)) continue;
+      const bool diagonal = neighbor_dx[neighbor] != 0 &&
+                            neighbor_dy[neighbor] != 0;
+      const double step =
+          map_->resolution() * (diagonal ? std::sqrt(2.0) : 1.0);
+      const double candidate_distance = item.distance + step;
+      const int candidate_index = map_->linearIndex(nx, ny);
+      double& recorded =
+          holonomic_distance[static_cast<size_t>(candidate_index)];
+      if (candidate_distance + 1e-9 >= recorded) continue;
+      recorded = candidate_distance;
+      grid_open.push({candidate_distance, candidate_index});
+    }
+  }
+
+  const auto search_heuristic = [&](const SE2State& state) {
+    const double euclidean_with_yaw = heuristic(state, goal_search);
+    const GridIndex grid = map_->worldToGrid(state.x, state.y);
+    if (!map_->isInside(grid.x, grid.y)) return euclidean_with_yaw;
+    const double holonomic = holonomic_distance[static_cast<size_t>(
+        map_->linearIndex(grid.x, grid.y))];
+    if (!std::isfinite(holonomic)) return euclidean_with_yaw;
+    const double yaw_cost =
+        0.2 * std::abs(normalizeAngle(state.yaw - goal_search.yaw));
+    return std::max(euclidean_with_yaw, holonomic + yaw_cost);
+  };
+
   struct SearchTuning {
     int max_expansions = 0;
     int steer_samples = 0;
@@ -209,7 +294,8 @@ bool HybridAStarPlanner::plan(const SE2State& start, const SE2State& goal,
     Node start_node;
     start_node.state = start_search;
     start_node.g = 0.0;
-    start_node.f = heuristic(start_search, goal_search);
+    const double heuristic_weight = std::max(1.0, params_.heuristic_weight);
+    start_node.f = heuristic_weight * search_heuristic(start_search);
     start_node.parent = -1;
     start_node.dir = 0;
     start_node.steer_idx = steer_samples / 2;
@@ -220,12 +306,13 @@ bool HybridAStarPlanner::plan(const SE2State& start, const SE2State& goal,
     int best_goal_idx = -1;
     int nearest_idx = 0;
     int connect_goal_idx = -1;
-    double nearest_h = heuristic(start_search, goal_search);
+    double nearest_h = search_heuristic(start_search);
     int expansions = 0;
     const double connect_trigger_dist =
         std::max(1.0, 4.0 * params_.goal_tolerance_pos);
 
-    while (!open.empty() && expansions < tuning.max_expansions) {
+    while (!open.empty() && expansions < tuning.max_expansions &&
+           !deadline_expired()) {
       const OpenItem item = open.top();
       open.pop();
       if (item.idx < 0 || item.idx >= static_cast<int>(nodes.size())) {
@@ -237,7 +324,7 @@ bool HybridAStarPlanner::plan(const SE2State& start, const SE2State& goal,
       }
       ++expansions;
 
-      const double current_h = heuristic(current.state, goal_search);
+      const double current_h = search_heuristic(current.state);
       if (current_h < nearest_h) {
         nearest_h = current_h;
         nearest_idx = item.idx;
@@ -301,7 +388,7 @@ bool HybridAStarPlanner::plan(const SE2State& start, const SE2State& goal,
           Node child;
           child.state = next;
           child.g = g2;
-          child.f = g2 + heuristic(next, goal_search);
+          child.f = g2 + heuristic_weight * search_heuristic(next);
           child.parent = item.idx;
           child.dir = dir;
           child.steer_idx = steer_idx;
@@ -320,9 +407,11 @@ bool HybridAStarPlanner::plan(const SE2State& start, const SE2State& goal,
     } else if (connect_goal_idx >= 0) {
       target_idx = connect_goal_idx;
       add_goal_after_reconstruct = true;
+      result.reached_goal = true;
     } else if (nearest_idx >= 0) {
+      // Retain the nearest partial chain for diagnostics, but never report it
+      // as a valid fallback path.
       target_idx = nearest_idx;
-      add_goal_after_reconstruct = true;
     }
     if (target_idx < 0) {
       return result;
@@ -347,7 +436,7 @@ bool HybridAStarPlanner::plan(const SE2State& start, const SE2State& goal,
 
     result.expansions = expansions;
     result.nearest_h = nearest_h;
-    result.ok = out_path->size() >= 2;
+    result.ok = result.reached_goal && out_path->size() >= 2;
     return result;
   };
 
@@ -370,12 +459,31 @@ bool HybridAStarPlanner::plan(const SE2State& start, const SE2State& goal,
   if (fast.ok) {
     return true;
   }
+  const std::vector<SE2State> fast_partial = path;
+  const auto publish_diagnostic = [&](const std::vector<SE2State>& partial) {
+    if (diagnostic_partial && partial.size() >= 2) {
+      *diagnostic_partial = partial;
+    }
+  };
   if (fast_expansions == full_expansions && fast_steer == full_steer) {
+    publish_diagnostic(path);
+    path.clear();
+    return false;
+  }
+  if (deadline_expired()) {
+    publish_diagnostic(path);
+    path.clear();
     return false;
   }
 
   SearchResult full =
       run_search({full_expansions, full_steer}, &path);
+  if (!full.ok) {
+    publish_diagnostic(
+        full.nearest_h <= fast.nearest_h ? path : fast_partial
+    );
+    path.clear();
+  }
   return full.ok;
 }
 
