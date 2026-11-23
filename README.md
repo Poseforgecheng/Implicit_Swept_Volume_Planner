@@ -21,17 +21,11 @@
 
 ## 1. 方法与边界
 
-```text
-Map / ESDF / footprint / mesh / start / goal
-  -> Halton roadmap + repeated Dijkstra
-  -> shortcut + ESDF correction + approximate deduplication
-  -> five-factor continuous risk + hysteresis / guards
-  -> LOW: R² | MEDIUM: SE(2) | HIGH: full SVSDF
-  -> stitch + footprint / dynamics / continuity / endpoint gates
-  -> validated incumbent + report, or explicit failure
-       failure -> guarded window W -> upgrade / local search patch -> revalidate
-       front-end shortage -> Hybrid A* fallback under the same scheduling budget
-```
+![论文系统框架：候选路径生成与连续几何风险、风险驱动三级优化、统一验证、局部恢复及轨迹输出](docs/images/system_framework.png)
+
+论文系统框架。黑色实线为主规划链，红色虚线为瓶颈邻域局部恢复，蓝色虚线为回退路径；所有候选均须通过统一门控才能更新当前最优可行解。
+
+[可编辑 SVG](docs/images/system_framework.svg) · [矢量 PDF](docs/images/system_framework.pdf)
 
 五因素为 footprint 有效净空、可行朝向宽度、朝向集合连续性、局部修正代价和不确定性侵蚀。风险分数用于分配求解精度，**不是校准后的碰撞概率**。
 
